@@ -1,0 +1,554 @@
+"""Initialization, mutation, imports, reports, and audit operations."""
+
+from __future__ import annotations
+
+import json
+import math
+import random
+import re
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from .checks import check_review, require_valid
+from .errors import ReviewToolError
+from .io import (
+    CANONICAL_FILES, atomic_write, canonical_bytes, digest_bytes, ensure_review_root,
+    jsonl_bytes, load_json, load_jsonl, safe_child, state_digest,
+)
+from .references import extract_reference
+from .transactions import recover, transact
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def initialize(review_dir: Path, contract: Path, reference_pack: Path, runtime: str) -> dict:
+    for label, path in (("contract", contract), ("reference pack", reference_pack)):
+        if not path.is_file():
+            raise ReviewToolError(f"{label} is not a readable file: {path}")
+    root = review_dir.expanduser()
+    if root.exists() and (root / "run.json").exists():
+        recover(root.resolve())
+        return {"reviewDirectory": str(root.resolve()), "idempotent": True, "stateDigest": state_digest(root.resolve())}
+    if root.exists() and any(root.iterdir()):
+        raise ReviewToolError(f"refusing to initialize non-empty unrelated directory: {root}")
+    root = ensure_review_root(root, create=True)
+    for directory in ("assignments", "agents", "baseline", "tooling/reference/source", "tooling/transactions"):
+        safe_child(root, directory).mkdir(parents=True, exist_ok=True)
+    contract_bytes = contract.read_bytes()
+    pack_bytes = reference_pack.read_bytes()
+    atomic_write(root / "tooling/reference/source/contract.md", contract_bytes)
+    atomic_write(root / "tooling/reference/source/reference-pack.md", pack_bytes)
+    derived = []
+    for extract in extract_reference(pack_bytes):
+        atomic_write(root / "tooling/reference" / extract.filename, extract.data)
+        derived.append({
+            "path": extract.filename,
+            "sourceSection": extract.section,
+            "sourceByteStart": extract.start,
+            "sourceByteEnd": extract.end,
+            "byteSize": len(extract.data),
+        })
+    reference_manifest = {
+        "reviewSpecVersion": 1,
+        "specEpoch": "SPEC-0001",
+        "sources": [
+            {"path": "source/contract.md", "sourcePath": str(contract), "byteSize": len(contract_bytes)},
+            {"path": "source/reference-pack.md", "sourcePath": str(reference_pack), "byteSize": len(pack_bytes)},
+        ],
+        "derived": derived,
+    }
+    atomic_write(root / "tooling/reference/manifest.json", canonical_bytes(reference_manifest))
+    now = utc_now()
+    run = {
+        "schemaVersion": 1,
+        "reviewSpecVersion": 1,
+        "specEpoch": "SPEC-0001",
+        "specification": {
+            "initializedAt": now,
+            "contractSource": str(contract),
+            "contractPreserved": "tooling/reference/source/contract.md",
+            "referencePackSource": str(reference_pack),
+            "referencePackPreserved": "tooling/reference/source/reference-pack.md",
+        },
+        "specMigrations": [],
+        "repositoryIdentity": "unrecorded",
+        "reviewDirectory": str(root),
+        "status": "active" if runtime != "none" else "paused",
+        "verdict": None,
+        "runtimeCapability": runtime,
+        "capabilitySource": "harness_declared" if runtime != "none" else "absent_default_none",
+        "targetPolicy": "frozen_baseline",
+        "currentEpoch": "EPOCH-0001",
+        "baselineCommit": None,
+        "baselineContentSetHash": None,
+        "startedAt": now,
+        "updatedAt": now,
+        "concludedAt": None,
+        "budget": None,
+        "currentPhase": "baseline",
+        "completedPhases": [],
+        "checkpointReason": "runtime has no automatic continuation" if runtime == "none" else None,
+        "nextActions": ["capture and materialize the frozen baseline", "construct semantic work units", "run the representative pilot"],
+        "schemaMigrations": [],
+        "stateEventHead": None,
+        "supersededBy": None,
+        "generatedStateDigest": None,
+        "finalAudit": None,
+    }
+    replacements = {
+        "run.json": canonical_bytes(run),
+        "paths.jsonl": b"",
+        "work-units.jsonl": b"",
+        "observations.jsonl": b"",
+        "validations.jsonl": b"",
+        "audit-objections.jsonl": b"",
+        "architecture.md": b"# Review architecture\n\nArchitecture discovery has not yet been completed.\n",
+    }
+    result = transact(root, replacements, operation="init", actor="orchestrator", timestamp=now, expected_digest=None)
+    return {"reviewDirectory": str(root), "idempotent": False, **result}
+
+
+def apply_mutation(root: Path, expected: str, changes_path: Path | None, migrate: tuple[Path, Path, list[str], list[int]] | None) -> dict:
+    root = ensure_review_root(root)
+    recover(root)
+    replacements: dict[str, bytes] = {}
+    if changes_path:
+        changes = load_json(changes_path)
+        if not isinstance(changes, dict) or not changes:
+            raise ReviewToolError("changes file must contain a non-empty object of canonical replacements")
+        allowed = set(CANONICAL_FILES) | {"assignments"}
+        for relative, value in changes.items():
+            if relative.startswith("assignments/"):
+                replacements[relative] = canonical_bytes(value) if not isinstance(value, str) else value.encode()
+            elif relative.endswith(".jsonl"):
+                if not isinstance(value, list):
+                    raise ReviewToolError(f"{relative} replacement must be a JSON array")
+                replacements[relative] = jsonl_bytes(value)
+            elif relative.endswith(".json"):
+                replacements[relative] = canonical_bytes(value)
+            elif relative == "architecture.md" and isinstance(value, str):
+                replacements[relative] = value.encode()
+            else:
+                raise ReviewToolError(f"unauthorized mutation target: {relative}")
+    if migrate:
+        contract, pack, sections, angles = migrate
+        if not contract.is_file() or not pack.is_file():
+            raise ReviewToolError("specification migration sources must be readable files")
+        run = load_json(root / "run.json")
+        next_number = int(run["specEpoch"].split("-")[1]) + 1
+        epoch = f"SPEC-{next_number:04d}"
+        migration_prefix = f"tooling/reference/migrations/{epoch}"
+        contract_bytes = contract.read_bytes()
+        pack_bytes = pack.read_bytes()
+        if (root / migration_prefix).exists():
+            raise ReviewToolError(f"specification migration epoch already exists: {epoch}")
+        replacements[f"{migration_prefix}/contract.md"] = contract_bytes
+        replacements[f"{migration_prefix}/reference-pack.md"] = pack_bytes
+        derived = []
+        for extract in extract_reference(pack_bytes):
+            replacements[f"tooling/reference/{extract.filename}"] = extract.data
+            derived.append({
+                "path": extract.filename, "sourceSection": extract.section,
+                "sourceByteStart": extract.start, "sourceByteEnd": extract.end,
+                "byteSize": len(extract.data),
+            })
+        install_manifest = {
+            "reviewSpecVersion": 1, "specEpoch": epoch,
+            "sources": [
+                {"path": f"migrations/{epoch}/contract.md", "sourcePath": str(contract), "byteSize": len(contract_bytes)},
+                {"path": f"migrations/{epoch}/reference-pack.md", "sourcePath": str(pack), "byteSize": len(pack_bytes)},
+            ],
+            "derived": derived,
+        }
+        replacements["tooling/reference/manifest.json"] = canonical_bytes(install_manifest)
+        run["specMigrations"].append({
+            "id": f"SPEC-MIGRATION-{next_number - 1:04d}", "fromSpecEpoch": run["specEpoch"],
+            "toSpecEpoch": epoch, "changedSections": sections, "affectedAngles": angles,
+            "wholeUnitRevalidation": not angles, "contractPreserved": f"{migration_prefix}/contract.md",
+            "referencePackPreserved": f"{migration_prefix}/reference-pack.md", "recordedAt": utc_now(),
+        })
+        run["specEpoch"] = epoch
+        run["updatedAt"] = utc_now()
+        units = load_jsonl(root / "work-units.jsonl")
+        for unit in units:
+            unit["specEpoch"] = epoch
+            for number, disposition in unit.get("angles", {}).items():
+                if not angles or int(number) in angles:
+                    if disposition.get("status") in {"reviewed", "not_applicable"}:
+                        disposition["status"] = "needs_revalidation"
+                    disposition["specEpoch"] = None
+                    unit["status"] = "needs_revalidation"
+        replacements["run.json"] = canonical_bytes(run)
+        replacements["work-units.jsonl"] = jsonl_bytes(units)
+    if not replacements:
+        raise ReviewToolError("mutate requires --changes or --migrate-spec")
+
+    def validator(_: Path, proposed: dict[str, bytes]) -> None:
+        # Validate lifecycle transitions before the commit marker. Full
+        # partition checks may intentionally remain incomplete while baseline
+        # and work-unit construction are in progress.
+        if "run.json" in proposed:
+            new = json.loads(proposed["run.json"])
+            old = load_json(root / "run.json")
+            legal = {
+                "active": {"active", "paused", "concluded", "superseded"},
+                "paused": {"paused", "active", "concluded", "superseded"},
+                "concluded": {"concluded"}, "superseded": {"superseded"},
+            }
+            if new.get("status") not in legal.get(old.get("status"), set()):
+                raise ReviewToolError(f"invalid status transition: {old.get('status')} -> {new.get('status')}")
+        if "work-units.jsonl" in proposed:
+            old_units = {item.get("id"): item for item in load_jsonl(root / "work-units.jsonl")}
+            new_units = {item.get("id"): item for item in [json.loads(line) for line in proposed["work-units.jsonl"].splitlines() if line]}
+            work_legal = {
+                "pending": {"pending", "assigned", "blocked"},
+                "assigned": {"assigned", "partial", "complete", "blocked", "needs_revalidation"},
+                "partial": {"partial", "assigned", "blocked", "needs_revalidation"},
+                "complete": {"complete", "needs_revalidation"},
+                "blocked": {"blocked", "pending", "assigned"},
+                "needs_revalidation": {"needs_revalidation", "assigned", "blocked"},
+            }
+            angle_legal = {
+                "pending": {"pending", "reviewed", "not_applicable", "blocked"},
+                "reviewed": {"reviewed", "needs_revalidation"},
+                "not_applicable": {"not_applicable", "needs_revalidation"},
+                "blocked": {"blocked", "pending"},
+                "needs_revalidation": {"needs_revalidation", "reviewed", "not_applicable", "blocked"},
+            }
+            for identifier, old in old_units.items():
+                if identifier not in new_units:
+                    raise ReviewToolError(f"work unit deletion is not a legal transition: {identifier}")
+                new = new_units[identifier]
+                if new.get("status") not in work_legal.get(old.get("status"), set()):
+                    raise ReviewToolError(f"invalid work-unit status transition for {identifier}: {old.get('status')} -> {new.get('status')}")
+                for number, old_angle in old.get("angles", {}).items():
+                    if number not in new.get("angles", {}):
+                        raise ReviewToolError(f"angle disposition removed from {identifier}: {number}")
+                    new_status = new["angles"][number].get("status")
+                    if new_status not in angle_legal.get(old_angle.get("status"), set()):
+                        raise ReviewToolError(f"invalid angle transition for {identifier}/{number}: {old_angle.get('status')} -> {new_status}")
+        if "observations.jsonl" in proposed:
+            old_rows = {item.get("id"): item for item in load_jsonl(root / "observations.jsonl")}
+            new_rows = {item.get("id"): item for item in [json.loads(line) for line in proposed["observations.jsonl"].splitlines() if line]}
+            observation_legal = {
+                "open": {"open", "validated", "rejected", "duplicate", "unresolved"},
+                "unresolved": {"unresolved", "open", "validated", "rejected", "duplicate"},
+                "validated": {"validated", "withdrawn"},
+                "rejected": {"rejected"}, "duplicate": {"duplicate"}, "withdrawn": {"withdrawn"},
+            }
+            for identifier, old in old_rows.items():
+                if identifier not in new_rows:
+                    raise ReviewToolError(f"observation deletion is not a legal transition: {identifier}")
+                new_status = new_rows[identifier].get("disposition")
+                if new_status not in observation_legal.get(old.get("disposition"), set()):
+                    raise ReviewToolError(f"invalid observation transition for {identifier}: {old.get('disposition')} -> {new_status}")
+    return transact(root, replacements, operation="mutate", actor="orchestrator", timestamp=utc_now(), expected_digest=expected, validator=validator)
+
+
+def _allocate(rows: list[dict], field: str, prefix: str, width: int) -> str:
+    numbers = []
+    pattern = re.compile(rf"{prefix}-(\d{{{width}}})$")
+    for row in rows:
+        match = pattern.fullmatch(str(row.get(field, "")))
+        if match:
+            numbers.append(int(match.group(1)))
+    return f"{prefix}-{(max(numbers, default=0) + 1):0{width}d}"
+
+
+def import_specialist(root: Path, work_id: str, attempt_id: str, expected: str) -> dict:
+    root = ensure_review_root(root)
+    attempt_dir = root / "agents" / work_id / attempt_id
+    result_path = attempt_dir / "result.json"
+    validations_path = attempt_dir / "validations.jsonl"
+    result = load_json(result_path)
+    local_validations = load_jsonl(validations_path)
+    units = load_jsonl(root / "work-units.jsonl")
+    observations = load_jsonl(root / "observations.jsonl")
+    validations = load_jsonl(root / "validations.jsonl")
+    unit = next((item for item in units if item.get("id") == work_id), None)
+    if not unit:
+        raise ReviewToolError(f"unknown work unit: {work_id}")
+    attempt = next((item for item in unit.get("reviewAttempts", []) if item.get("attemptId") == attempt_id), None)
+    if not attempt:
+        raise ReviewToolError(f"unknown attempt: {work_id}/{attempt_id}")
+    manifest_path = safe_child(root, attempt["manifest"])
+    manifest = load_json(manifest_path)
+    checks = {
+        "workId": work_id, "attemptId": attempt_id,
+        "reviewerExecutionId": attempt.get("reviewerExecutionId"),
+        "packetType": attempt.get("packetType"),
+        "attemptManifestHash": attempt.get("manifestHash"),
+        "unitManifestHash": attempt.get("unitManifestHash"),
+        "specEpoch": load_json(root / "run.json")["specEpoch"],
+    }
+    for field, expected_value in checks.items():
+        if result.get(field) != expected_value:
+            raise ReviewToolError(f"specialist result {field} mismatch")
+    if attempt.get("manifestHash") != digest_bytes(manifest_path.read_bytes()):
+        raise ReviewToolError("attempt manifest identity mismatch")
+    token = f"A{int(attempt_id.split('-')[1])}"
+    local_candidates = result.get("candidates", [])
+    candidate_map: dict[str, str] = {}
+    for candidate in local_candidates:
+        local = candidate.get("localId")
+        if not re.fullmatch(rf"CAND-{token}-\d{{3}}", str(local)) or local in candidate_map:
+            raise ReviewToolError(f"invalid or duplicate local candidate identifier: {local}")
+        candidate_map[local] = _allocate(observations, "id", "OBS", 6)
+        observations.append({
+            "id": candidate_map[local], "sourceWorkUnits": [work_id], "sourceAttempt": f"{work_id}/{attempt_id}",
+            "sourceLocalId": local, "title": candidate.get("title", "Untitled observation"),
+            "category": candidate.get("category", "unspecified"), "primaryLocation": candidate.get("primaryLocation"),
+            "additionalLocations": candidate.get("additionalLocations", []), "disposition": "open", "reportClass": None,
+            "findingId": None, "severity": None, "materiality": None, "materialityRationale": None,
+            "confidence": candidate.get("confidence", "Low"), "evidence": candidate.get("evidence", []),
+            "counterargument": candidate.get("counterargument", ""), "trigger": candidate.get("trigger", ""),
+            "expected": candidate.get("expected", ""), "actual": candidate.get("actual", ""),
+            "impact": candidate.get("impact", ""), "recommendation": candidate.get("recommendation", ""),
+            "validationRefs": [], "duplicateOf": None, "withdrawal": None, "createdAt": utc_now(), "updatedAt": utc_now(),
+        })
+    validation_map: dict[str, str] = {}
+    for row in local_validations:
+        local = row.get("localId")
+        if not re.fullmatch(rf"AVAL-{token}-\d{{3}}", str(local)) or local in validation_map:
+            raise ReviewToolError(f"invalid or duplicate local validation identifier: {local}")
+        unknown = set(row.get("supportsCandidates", [])) - set(candidate_map)
+        if unknown:
+            raise ReviewToolError(f"validation references unknown candidates: {sorted(unknown)}")
+        canonical = _allocate(validations, "id", "VAL", 6)
+        validation_map[local] = canonical
+        validations.append({
+            "id": canonical, "sourceAttempt": f"{work_id}/{attempt_id}", "sourceLocalId": local,
+            "workUnits": [work_id], "observationIds": [candidate_map[item] for item in row.get("supportsCandidates", [])],
+            **{key: row.get(key) for key in ("command", "cwd", "environmentSummary", "startedAt", "endedAt", "exitStatus", "result", "limitations", "createdArtifacts")},
+            "trackedTreeMutation": row.get("trackedTreeMutation"),
+        })
+    for candidate, imported in zip(local_candidates, observations[-len(local_candidates):] if local_candidates else []):
+        refs = candidate.get("validationRefs", [])
+        if any(ref not in validation_map for ref in refs):
+            raise ReviewToolError(f"candidate references unknown local validation: {candidate.get('localId')}")
+        imported["validationRefs"] = [validation_map[ref] for ref in refs]
+    attempt["status"] = result.get("status")
+    attempt["resultHash"] = digest_bytes(result_path.read_bytes())
+    attempt["importDisposition"] = "imported"
+    for number, disposition in result.get("angleDispositions", {}).items():
+        if number not in unit.get("angles", {}):
+            raise ReviewToolError(f"result includes unassigned angle: {number}")
+        evidence = []
+        for item in disposition.get("evidence", []):
+            evidence.append({"sourceAttempt": f"{work_id}/{attempt_id}", **item})
+        if result.get("packetType") == "primary_semantic":
+            unit["angles"][number] = {"status": disposition.get("status"), "evidence": evidence, "specEpoch": result["specEpoch"]}
+    if result.get("packetType") == "independent_second_review":
+        requirement_id = manifest.get("secondReviewRequirementId")
+        requirement = next((item for item in unit.get("requiredSecondReviews", []) if item.get("id") == requirement_id), None)
+        if requirement is None:
+            raise ReviewToolError("second-review attempt names no current requirement")
+        second_results = result.get("secondReviewResults", [])
+        if len(second_results) != 1:
+            raise ReviewToolError("second-review result must contain exactly one structured completion")
+        second = second_results[0]
+        if second.get("requirementId") != requirement_id or second.get("required") != requirement:
+            raise ReviewToolError("second-review result does not match the assigned requirement")
+        covered = second.get("scopeCovered")
+        if covered != {"kind": "whole_unit"} and covered != requirement.get("scope"):
+            raise ReviewToolError("second-review scope does not cover the requirement")
+        independent_ids = manifest.get("independentFromAttemptIds", [])
+        contributing_reviewers = {
+            item.get("reviewerExecutionId") for item in unit.get("reviewAttempts", [])
+            if item.get("attemptId") in independent_ids
+        }
+        if result.get("reviewerExecutionId") in contributing_reviewers:
+            raise ReviewToolError("second reviewer is not independent of primary evidence contributors")
+        candidate_refs = second.get("candidateRefs", [])
+        if any(ref not in candidate_map for ref in candidate_refs):
+            raise ReviewToolError("second-review completion references an unknown candidate")
+        unit.setdefault("completedSecondReviews", []).append({
+            "requirementId": requirement_id, "required": requirement,
+            "attempt": f"{work_id}/{attempt_id}", "attemptManifestHash": attempt["manifestHash"],
+            "reviewerExecutionId": result["reviewerExecutionId"],
+            "independentFromAttemptIds": independent_ids,
+            "primaryEvidenceSetHash": manifest.get("primaryEvidenceSetHash"),
+            "scopeCovered": covered, "evidence": second.get("evidence", []),
+            "conclusion": second.get("conclusion"),
+            "observations": [candidate_map[ref] for ref in candidate_refs],
+            "specEpoch": result["specEpoch"],
+        })
+    unit["residualUncertainty"] = result.get("residualUncertainty", [])
+    completed_requirements = {item.get("requirementId") for item in unit.get("completedSecondReviews", [])}
+    requirements_satisfied = all(item.get("id") in completed_requirements for item in unit.get("requiredSecondReviews", []))
+    all_angles_complete = all(item.get("status") in {"reviewed", "not_applicable"} for item in unit["angles"].values())
+    unit["status"] = "complete" if result.get("status") == "complete" and all_angles_complete and requirements_satisfied else ("partial" if result.get("packetType") == "independent_second_review" else result.get("status"))
+    unit["updatedAt"] = utc_now()
+    replacements = {"work-units.jsonl": jsonl_bytes(units), "observations.jsonl": jsonl_bytes(observations), "validations.jsonl": jsonl_bytes(validations)}
+    return transact(root, replacements, operation="import", actor=f"{work_id}/{attempt_id}", timestamp=utc_now(), expected_digest=expected)
+
+
+def import_audit(root: Path, attempt_id: str, expected: str) -> dict:
+    root = ensure_review_root(root)
+    manifest_path = root / "assignments/FINAL-AUDIT" / f"{attempt_id}.json"
+    manifest = load_json(manifest_path)
+    result_path = root / "agents/FINAL-AUDIT" / attempt_id / "result.json"
+    result = load_json(result_path)
+    local_validations = load_jsonl(result_path.with_name("validations.jsonl"))
+    if result.get("attemptManifestHash") != digest_bytes(manifest_path.read_bytes()):
+        raise ReviewToolError("final-auditor attempt manifest identity mismatch")
+    if result.get("reviewerExecutionId") != manifest.get("reviewerExecutionId"):
+        raise ReviewToolError("final-auditor reviewer execution identity mismatch")
+    if result.get("reviewerExecutionId") in manifest.get("independentFromReviewerExecutionIds", []):
+        raise ReviewToolError("final auditor is not independent")
+    for field in ("baselineContentSetHash", "finalWorkUnitSetHash", "mechanicalAuditHash", "reportManifestHash"):
+        if field in manifest and result.get(field) != manifest.get(field):
+            raise ReviewToolError(f"final-auditor {field} mismatch")
+    if "deterministicSample" in manifest and result.get("sampledUnits") != manifest.get("deterministicSample"):
+        raise ReviewToolError("final-auditor sampled scope does not match its immutable assignment")
+    if result.get("status") != "complete":
+        raise ReviewToolError("only a complete final-auditor result can be imported")
+    run = load_json(root / "run.json")
+    if result.get("specEpoch") != run.get("specEpoch"):
+        raise ReviewToolError("final-auditor result uses the wrong specEpoch")
+    observations = load_jsonl(root / "observations.jsonl")
+    validations = load_jsonl(root / "validations.jsonl")
+    objections = load_jsonl(root / "audit-objections.jsonl")
+    token = f"A{int(attempt_id.split('-')[1])}"
+    candidate_map = {}
+    audit_candidates = result.get("candidates", [])
+    imported_candidates = []
+    for candidate in audit_candidates:
+        local = candidate.get("localId")
+        if not re.fullmatch(rf"CAND-{token}-\d{{3}}", str(local)):
+            raise ReviewToolError(f"invalid final-auditor candidate identifier: {local}")
+        canonical = _allocate(observations, "id", "OBS", 6)
+        candidate_map[local] = canonical
+        imported = {"id": canonical, "sourceWorkUnits": candidate.get("sourceWorkUnits", []), "sourceAttempt": f"FINAL-AUDIT/{attempt_id}", "sourceLocalId": local, "title": candidate.get("title", "Audit observation"), "category": candidate.get("category", "audit"), "primaryLocation": candidate.get("primaryLocation"), "additionalLocations": [], "disposition": "open", "reportClass": None, "findingId": None, "severity": None, "materiality": None, "materialityRationale": None, "confidence": candidate.get("confidence", "Low"), "evidence": candidate.get("evidence", []), "counterargument": candidate.get("counterargument", ""), "trigger": "", "expected": "", "actual": "", "impact": "", "recommendation": "", "validationRefs": [], "duplicateOf": None, "withdrawal": None, "createdAt": utc_now(), "updatedAt": utc_now()}
+        observations.append(imported)
+        imported_candidates.append(imported)
+    for objection in result.get("objections", []):
+        local = objection.get("localId")
+        if not re.fullmatch(rf"AAOB-{token}-\d{{3}}", str(local)):
+            raise ReviewToolError(f"invalid local audit objection identifier: {local}")
+        refs = objection.get("candidateRefs", [])
+        if any(ref not in candidate_map for ref in refs):
+            raise ReviewToolError(f"audit objection references unknown candidate: {local}")
+        objections.append({"id": _allocate(objections, "id", "AOB", 6), "sourceAttempt": f"FINAL-AUDIT/{attempt_id}", "sourceLocalId": local, "affectedPaths": objection.get("affectedPaths", []), "workUnits": objection.get("workUnits", []), "materiality": objection.get("materiality"), "evidence": objection.get("evidence", []), "requiredResolution": objection.get("requiredResolution", ""), "disposition": "open", "resolutionEvidence": [], "candidateRefs": [candidate_map[ref] for ref in refs], "createdAt": utc_now(), "updatedAt": utc_now()})
+    validation_map = {}
+    for row in local_validations:
+        local = row.get("localId")
+        if not re.fullmatch(rf"AVAL-{token}-\d{{3}}", str(local)) or local in validation_map:
+            raise ReviewToolError(f"invalid or duplicate final-auditor validation identifier: {local}")
+        unknown = set(row.get("supportsCandidates", [])) - set(candidate_map)
+        if unknown:
+            raise ReviewToolError(f"final-auditor validation references unknown candidates: {sorted(unknown)}")
+        canonical = _allocate(validations, "id", "VAL", 6)
+        validation_map[local] = canonical
+        validations.append({
+            "id": canonical, "sourceAttempt": f"FINAL-AUDIT/{attempt_id}", "sourceLocalId": local,
+            "workUnits": row.get("workUnits", []),
+            "observationIds": [candidate_map[item] for item in row.get("supportsCandidates", [])],
+            **{key: row.get(key) for key in ("command", "cwd", "environmentSummary", "startedAt", "endedAt", "exitStatus", "result", "limitations", "createdArtifacts")},
+            "trackedTreeMutation": row.get("trackedTreeMutation"),
+        })
+    for candidate, imported in zip(audit_candidates, imported_candidates):
+        refs = candidate.get("validationRefs", [])
+        if any(ref not in validation_map for ref in refs):
+            raise ReviewToolError(f"final-auditor candidate references unknown validation: {candidate.get('localId')}")
+        imported["validationRefs"] = [validation_map[ref] for ref in refs]
+    run["finalAudit"] = {"attemptId": attempt_id, "reviewerExecutionId": result["reviewerExecutionId"], "resultHash": digest_bytes(result_path.read_bytes()), "status": "imported", "sampledUnits": result.get("sampledUnits", [])}
+    replacements = {"run.json": canonical_bytes(run), "observations.jsonl": jsonl_bytes(observations), "validations.jsonl": jsonl_bytes(validations), "audit-objections.jsonl": jsonl_bytes(objections)}
+    return transact(root, replacements, operation="import_audit", actor=f"FINAL-AUDIT/{attempt_id}", timestamp=utc_now(), expected_digest=expected)
+
+
+GENERATED = [
+    "README.md", "coverage-ledger.md", "findings-index.md", "findings/P0.md", "findings/P1.md",
+    "findings/P2.md", "findings/P3.md", "findings/P4.md", "findings/withdrawn.md",
+    "rejected-candidates.md", "nits.md", "suggestions.md", "questions.md", "test-gaps.md",
+    "documentation.md", "validation-log.md", "audit-report.md",
+]
+
+
+def _observation_view(title: str, rows: list[dict]) -> bytes:
+    lines = [f"# {title}", ""]
+    if not rows:
+        lines.extend(["No records in this category.", ""])
+    for row in rows:
+        label = row.get("findingId") or row.get("id")
+        lines.extend([f"## {label} — {row.get('title', 'Untitled')}", "", f"- Disposition: {row.get('disposition')}", f"- Severity: {row.get('severity') or 'not assigned'}", f"- Confidence: {row.get('confidence') or 'not assigned'}", f"- Materiality: {row.get('materiality') or 'not assigned'}", f"- Location: {row.get('primaryLocation') or 'not recorded'}", ""])
+    return ("\n".join(lines)).encode()
+
+
+def generate(root: Path) -> dict:
+    root = ensure_review_root(root)
+    recover(root)
+    run = load_json(root / "run.json")
+    paths = load_jsonl(root / "paths.jsonl")
+    units = load_jsonl(root / "work-units.jsonl")
+    observations = load_jsonl(root / "observations.jsonl")
+    validations = load_jsonl(root / "validations.jsonl")
+    objections = load_jsonl(root / "audit-objections.jsonl")
+    outputs: dict[str, bytes] = {}
+    outputs["README.md"] = (f"# Exhaustive repository review\n\n- Repository: {run.get('repositoryIdentity')}\n- Revision: {run.get('baselineCommit')} / {run.get('currentEpoch')}\n- Specification epoch: {run.get('specEpoch')}\n- Lifecycle: {run.get('status')}\n- Runtime capability: {run.get('runtimeCapability')}\n- Verdict: {run.get('verdict') or 'nonterminal checkpoint'}\n- Baseline paths: {len(paths)}\n- Work units: {len(units)}\n- Observations: {len(observations)}\n- Validations: {len(validations)}\n- Audit objections: {len(objections)}\n\nThis report is a generated view of canonical state and is not proof that no undiscovered defects exist.\n").encode()
+    coverage = ["# Coverage ledger", ""] + [f"- {unit.get('id')}: {unit.get('status')} — {', '.join(unit.get('paths', []))}" for unit in units]
+    outputs["coverage-ledger.md"] = ("\n".join(coverage) + "\n").encode()
+    outputs["findings-index.md"] = _observation_view("Findings index", [row for row in observations if row.get("findingId")])
+    for severity in ("P0", "P1", "P2", "P3", "P4"):
+        outputs[f"findings/{severity}.md"] = _observation_view(f"{severity} findings", [row for row in observations if row.get("severity") == severity and row.get("disposition") == "validated"])
+    mappings = {
+        "findings/withdrawn.md": ("Withdrawn findings", lambda row: row.get("disposition") == "withdrawn"),
+        "rejected-candidates.md": ("Rejected candidates", lambda row: row.get("disposition") == "rejected"),
+        "nits.md": ("Nits", lambda row: row.get("reportClass") == "nit"),
+        "suggestions.md": ("Suggestions", lambda row: row.get("reportClass") == "suggestion"),
+        "questions.md": ("Questions", lambda row: row.get("reportClass") == "question"),
+        "test-gaps.md": ("Test gaps", lambda row: row.get("reportClass") == "test_gap"),
+        "documentation.md": ("Documentation observations", lambda row: row.get("reportClass") == "documentation"),
+    }
+    for name, (title, predicate) in mappings.items():
+        outputs[name] = _observation_view(title, [row for row in observations if predicate(row)])
+    outputs["validation-log.md"] = ("# Validation log\n\n" + ("\n".join(f"- {row.get('id')}: {row.get('result')} — {row.get('command')}" for row in validations) or "No validation records.") + "\n").encode()
+    outputs["audit-report.md"] = ("# Audit report\n\n" + ("\n".join(f"- {row.get('id')}: {row.get('disposition')} ({row.get('materiality')})" for row in objections) or "No audit objections recorded.") + "\n").encode()
+    for relative, data in outputs.items():
+        atomic_write(safe_child(root, relative), data)
+    manifest = {"schemaVersion": 1, "generatedAt": utc_now(), "canonicalStateDigest": state_digest(root), "outputs": {name: digest_bytes(data) for name, data in sorted(outputs.items())}}
+    atomic_write(root / "report-manifest.json", canonical_bytes(manifest))
+    return {"generated": len(outputs), "canonicalStateDigest": manifest["canonicalStateDigest"]}
+
+
+def deterministic_sample(units: list[dict], baseline_identity: str, work_identity: str, cap: int = 200) -> list[str]:
+    eligible = sorted(unit["id"] for unit in units if unit.get("riskTier") != "A" and unit.get("status") == "complete")
+    count = min(len(eligible), cap, max(25, math.ceil(0.01 * len(eligible)))) if eligible else 0
+    seed = int(digest_bytes(f"{baseline_identity}:{work_identity}".encode()), 16)
+    randomizer = random.Random(seed)
+    return sorted(randomizer.sample(eligible, count))
+
+
+def audit(root: Path, mode: str) -> dict:
+    root = ensure_review_root(root)
+    result = check_review(root, check_generated=True)
+    run = load_json(root / "run.json")
+    units = load_jsonl(root / "work-units.jsonl")
+    observations = load_jsonl(root / "observations.jsonl")
+    objections = load_jsonl(root / "audit-objections.jsonl")
+    unfinished = [unit for unit in units if unit.get("status") != "complete"]
+    open_observations = [row for row in observations if row.get("disposition") == "open"]
+    open_material_objections = [row for row in objections if row.get("disposition") == "open" and row.get("materiality") == "material"]
+    output: dict[str, Any] = {"mode": mode, "canonicalStateValid": result["ok"], "issues": list(result["issues"]), "counts": result["counts"]}
+    if mode == "checkpoint":
+        output.update({"completionGate": "FAIL", "checkpointState": run.get("status", "paused").upper(), "unfinishedUnits": len(unfinished), "openObservations": len(open_observations), "nextActionsRecorded": bool(run.get("nextActions")), "passed": result["ok"] and bool(run.get("nextActions") or not unfinished)})
+    elif mode == "completion":
+        phase_ok = set(run.get("completedPhases", [])) >= {"baseline", "semantic", "validation", "cross_component", "tail", "candidate_validation", "final_reconciliation", "independent_audit"}
+        final_ok = run.get("finalAudit", {}).get("status") == "imported" if isinstance(run.get("finalAudit"), dict) else False
+        if unfinished: output["issues"].append(f"unfinished work units: {len(unfinished)}")
+        if open_observations: output["issues"].append(f"open observations: {len(open_observations)}")
+        if open_material_objections: output["issues"].append(f"open material audit objections: {len(open_material_objections)}")
+        if not phase_ok: output["issues"].append("required review phases are incomplete")
+        if not final_ok: output["issues"].append("independent final audit is not imported")
+        output["passed"] = not output["issues"]
+        output["completionGate"] = "PASS" if output["passed"] else "FAIL"
+    else:
+        blockers = run.get("externalBlockers", [])
+        valid = [item for item in blockers if all(item.get(key) for key in ("affectedItem", "requiredAction", "evidence", "whyIndependentWorkCannotResolve", "resumeAction"))]
+        output.update({"completionGate": "FAIL", "unfinishedMaterialItems": len(blockers), "itemsWithValidExternalBlockers": len(valid), "itemsWithoutValidExternalBlockers": len(blockers) - len(valid), "independentActionableItems": len(run.get("independentActionableItems", [])), "passed": bool(blockers) and len(valid) == len(blockers) and not run.get("independentActionableItems")})
+        output["incompleteHandoffGate"] = "PASS" if output["passed"] else "FAIL"
+    return output

@@ -1,0 +1,19 @@
+[
+  "duplicate-permanent-identifier",
+  "invalid-status-transition",
+  "missing-primary-work-unit",
+  "multiple-primary-work-units",
+  "repository-content-identity-mismatch",
+  "stale-generated-views",
+  "unreconciled-specialist-attempt",
+  "orphaned-validation-reference",
+  "invalid-whole-unit-second-review",
+  "non-independent-second-review",
+  "stale-superseded-manifest",
+  "late-primary-import-invalidates-second-review",
+  "excluded-path-assigned",
+  "pass-with-material-concern",
+  "wrong-specification-epoch",
+  "uncommitted-staged-transaction",
+  "committed-incomplete-transaction"
+]
