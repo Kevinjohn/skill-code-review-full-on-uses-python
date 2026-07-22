@@ -10,6 +10,67 @@ This is not a larger pull-request review. It accounts for every in-scope path, g
 
 The core Skill follows the open Agent Skills directory format. Its `contract.md` and `reference-pack.md` are editable and forkable: they are snapshotted for each review specification epoch, but they are not cryptographically pinned or coupled to a digest manifest. Runtime identities remain where they protect the repository baseline, canonical state, transactions, attempts, validations, deterministic audit sampling, and generated reports.
 
+## How the review works
+
+```mermaid
+flowchart TD
+    A["Invoke the full repository review skill"] --> B["Detect active or paused review"]
+    B -->|Existing compatible review| C["Resume from canonical state"]
+    B -->|No compatible review| D["Capture frozen repository baseline"]
+
+    D --> E["Initialize review directory<br/>Snapshot contract and reference pack"]
+    C --> F
+    E --> F["Map architecture and every in-scope path"]
+
+    F --> G["Create cohesive semantic work units<br/>Classify as Tier A, B, or C"]
+    G --> H["Run representative pilot<br/>Verify tooling, packets, imports, and reports"]
+
+    H --> I["Review every work unit"]
+    I --> J["Apply all 10 review angles"]
+    J --> K{"Tier A requirements?"}
+    K -->|Yes| L["Independent second review<br/>by a distinct reviewer"]
+    K -->|No| M
+    L --> M["Import every observation<br/>into canonical state"]
+
+    M --> N["Run relevant validation<br/>Tests · static analysis · recovery · compatibility"]
+    N --> O["Cross-component reconciliation"]
+    O --> P["Dedicated tail review<br/>Tests · docs · SDKs · packaging · accessibility<br/>maintainability · nits · questions"]
+    P --> Q["Validate and deduplicate every candidate"]
+
+    Q --> R{"Candidate disposition"}
+    R -->|Validated| S["Assign finding ID and severity<br/>P0–P4"]
+    R -->|Rejected, duplicate, or unresolved| T["Preserve disposition and evidence"]
+    S --> U
+    T --> U["Final reconciliation"]
+
+    U --> V["Independent final audit"]
+    V --> W{"Open material objection?"}
+    W -->|Yes| X["Return affected scope to review"]
+    X --> I
+    W -->|No| Y{"Completion gate satisfied?"}
+
+    Y -->|Yes| Z["Generate final reports and verdict<br/>PASS · CONDITIONAL PASS · CHANGES REQUIRED<br/>MAJOR CHANGES REQUIRED · BLOCK"]
+    Y -->|Work can continue later| AA["Create exact paused checkpoint"]
+    AA --> C
+    Y -->|Externally blocked or explicitly authorized| AB["Conclude as INCOMPLETE REVIEW"]
+
+    subgraph Integrity["Integrity maintained throughout"]
+        I1["One primary owner for every non-excluded path"]
+        I2["Only the orchestrator mutates canonical state"]
+        I3["All observations retained—never severity-curated"]
+        I4["Transactions, identities, manifests, and reports verified"]
+    end
+
+    F -.-> I1
+    M -.-> I2
+    M -.-> I3
+    U -.-> I4
+```
+
+Every path is accounted for, every work unit receives all ten review angles,
+critical surfaces get independent review, and the process cannot issue a
+passing verdict until validation and the final audit are reconciled.
+
 ## Repository layout
 
 ```text
