@@ -22,4 +22,4 @@ jobs:
       - name: Unit, integration, broken-state, and Skill validation
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Utility smoke test
-        run: python3 skills/skill-code-review-full-on/scripts/review_tool --help
+        run: python3 skills/skill-code-review-full-on-uses-python/scripts/review_tool --help
