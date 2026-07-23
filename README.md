@@ -2,7 +2,7 @@
 
 An open Agent Skills-format workflow for exhaustive, evidence-backed review of an entire repository.
 
-> **Current release:** 0.1.1. The canonical Skill, portable Python state
+> **Current release:** 0.1.2. The canonical Skill, portable Python state
 > utility, tests, and CI are included; product-specific Plugin packaging is
 > intentionally deferred.
 
@@ -262,6 +262,12 @@ Use the skill-code-review-full-on-uses-python skill to run a complete repository
 
 Security review is deliberately opt-in. A new review uses security level
 `off` unless the request explicitly selects another level:
+
+See [Security review levels](SECURITY_LEVELS.md) for the rationale, detailed
+boundaries, common classification examples, and reporting implications.
+If a review stops around security-related work, use the
+[standard interruption report prompt](SECURITY_LEVEL_REPORT_PROMPT.md) and
+[dedicated GitHub issue form](https://github.com/Kevinjohn/skill-code-review-full-on-uses-python/issues/new?template=security-level-interruption.yml).
 
 ```text
 $skill-code-review-full-on-uses-python Run a complete review with --security-level low.

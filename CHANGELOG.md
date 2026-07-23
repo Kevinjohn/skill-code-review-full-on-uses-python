@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.2 — 2026-07-23
+
+### Added
+
+- Added a detailed guide to the rationale, limits, enforcement, and reporting
+  implications of each security-review level.
+- Added a standard read-only diagnostic prompt that produces sanitized,
+  consistently structured security-level interruption reports.
+- Added a dedicated GitHub Issue Form for submitting the generated report,
+  visible interruption message, and genuine screenshot evidence.
+
 ## 0.1.1 — 2026-07-23
 
 ### Added

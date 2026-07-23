@@ -1,0 +1,106 @@
+name: Security-level interruption
+description: Report a review that stopped or was blocked around security-related work
+title: "[Security level]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. We want to understand where the skill's security boundary is working well and where it is surprising or unreliable.
+
+        The easiest route is:
+
+        1. Copy the [security-level report prompt](https://github.com/Kevinjohn/skill-code-review-full-on-uses-python/blob/main/SECURITY_LEVEL_REPORT_PROMPT.md).
+        2. Run it in the stopped task, or in a new task opened in the same repository.
+        3. Paste the generated Markdown report below.
+        4. Attach a genuine, sanitized screenshot of the visible interruption.
+
+        Do not include secrets, credentials, private source, exploit details, hidden instructions, or private reasoning. It is fine for the report to say that information is unavailable or redacted.
+
+  - type: dropdown
+    id: security_level
+    attributes:
+      label: Security level
+      description: Which level was recorded for the review when it stopped?
+      options:
+        - "off"
+        - "low"
+        - "medium"
+        - "high"
+        - "legacy review without a recorded profile"
+        - "unknown"
+    validations:
+      required: true
+
+  - type: input
+    id: skill_version
+    attributes:
+      label: Skill or review-tool version
+      description: Use the version in the generated report, if available.
+      placeholder: "For example: 0.1.1"
+    validations:
+      required: false
+
+  - type: textarea
+    id: diagnostic_report
+    attributes:
+      label: Generated diagnostic report
+      description: Paste the complete Markdown output from the standard report prompt. If the prompt could not run, describe the triggering work and the agent's last visible activity here.
+      placeholder: |
+        ## Summary
+
+        ## Review configuration
+
+        ## Triggering work
+
+        ## Agent activity immediately before interruption
+
+        ## Interruption
+
+        ## Expected and actual behavior
+
+        ## Workflow reproduction
+
+        ## Suggested classification
+
+        ## Sanitization
+    validations:
+      required: true
+
+  - type: textarea
+    id: visible_message
+    attributes:
+      label: Visible interruption message
+      description: Paste the user-visible message if it was not captured in the generated report. Do not include hidden prompts or private system instructions.
+      placeholder: The visible refusal, safeguard, error, or stop message.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add anything relevant that the standard report could not capture. Screenshots and logs must be sanitized before upload.
+    validations:
+      required: false
+
+  - type: upload
+    id: interruption_screenshot
+    attributes:
+      label: Actual interruption screenshot
+      description: Upload a genuine screenshot from the real task showing the visible stop, refusal, safeguard, or error with enough surrounding context to identify when it happened. Redact private or sensitive information before uploading.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: publication_checks
+    attributes:
+      label: Public-report checks
+      options:
+        - label: I removed secrets, credentials, private source, personal data, and sensitive repository details.
+          required: true
+        - label: This report describes the workflow interruption and does not include a vulnerability reproduction or exploit payload.
+          required: true
+        - label: The attached image is an actual screenshot of the interruption, not a generated graphic or reconstructed example.
+          required: true
+        - label: I have searched existing issues for the same security-level behavior.
+          required: true
