@@ -2,7 +2,7 @@
 
 An open Agent Skills-format workflow for exhaustive, evidence-backed review of an entire repository.
 
-> **Current release:** 0.1.3. The canonical Skill, portable Python state
+> **Current release:** 0.2.0. The canonical Skill, portable Python state
 > utility, tests, and CI are included; product-specific Plugin packaging is
 > intentionally deferred.
 
@@ -36,7 +36,7 @@ flowchart TD
     E --> F["Map architecture and every in-scope path"]
 
     F --> G["Create cohesive semantic work units<br/>Classify as Tier A, B, or C"]
-    G --> H["Run representative pilot<br/>Verify tooling, packets, imports, and reports"]
+    G --> H["Run representative pilot through scaled dispatch path<br/>Verify arguments, tooling, packets, imports, and reports"]
 
     H --> I["Review every work unit"]
     I --> J["Apply all 10 angle dispositions<br/>within the recorded security level"]

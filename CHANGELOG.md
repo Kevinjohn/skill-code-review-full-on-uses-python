@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here.
 
+## 0.2.0 — 2026-07-23
+
+### Added
+
+- Added portable dispatch-conformance cases for object-shaped and serialized
+  inputs, malformed or missing assignments, duplicates, unknown work,
+  zero-scheduled waves, and canonical no-ops.
+
+### Changed
+
+- Expanded canonical observations and specialist output guidance to preserve
+  complete diagnostic, remediation, regression-test, reachability, affected
+  configuration, and uncertainty details.
+- Representative pilots now exercise the same adapter and argument boundary as
+  scaled waves. Dispatch records and reconciles intended, scheduled, and
+  started identities and fails closed on invalid input.
+- Generated review summaries now include severity counts and links to concise
+  and detailed finding views.
+
+### Fixed
+
+- Generated reports now preserve and render the complete finding details
+  required by the review specification, with readable path-and-line locations,
+  stable detail links, and honest placeholders for unavailable legacy fields.
+- Withdrawn findings now link to their retained detail instead of a severity
+  page that no longer contains them.
+
 ## 0.1.3 — 2026-07-23
 
 ### Added

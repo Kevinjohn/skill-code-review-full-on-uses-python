@@ -77,7 +77,9 @@ compatibility level of `high`.
    starts `SPEC-0001`; it does not require an external document signature.
 5. Materialize the baseline and architecture in canonical state, construct
    semantic work units and immutable manifests, then run the representative
-   pilot before repository-wide dispatch.
+   pilot through the same adapter, argument boundary, packet path, result
+   persistence, and import path intended for repository-wide dispatch. A pilot
+   dispatch failure blocks scaling.
 
 Use `scripts/review-tool check`, `mutate`, `import`, `import-audit`, `generate`,
 and `audit` throughout. Use `--help` for exact interfaces. Treat generated
@@ -93,6 +95,14 @@ the inherited security level and permitted validation classes, relevant
 extracted references, output schemas, and the mandatory specialist block.
 Never send the full contract, complete Reference Pack, conversation history,
 or unrelated findings.
+
+Fail closed at every dispatch boundary. Explicitly parse and validate assignment
+input; reject missing, malformed, unintentionally empty, duplicate, or unknown
+work identities instead of defaulting to an empty list. Record the intended
+identities and count, reconcile scheduled and started identities, and treat
+zero scheduled or started specialists for a non-empty intended wave as failure.
+Allow an empty wave only when canonical state proves there is no executable
+work and preserve the no-op reason.
 
 At `low`, `medium`, or `high`, describe defensive work as concrete component
 invariants using `defensive-assurance.md`. Prefer titles such as

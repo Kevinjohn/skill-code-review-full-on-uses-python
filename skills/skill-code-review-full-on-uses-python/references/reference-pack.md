@@ -206,7 +206,7 @@ contributing primary attempts, and a sealed primary evidence identity.
 ### `observations.jsonl`
 
 ```json
-{"id":"OBS-000001","sourceWorkUnits":["WORK-0001"],"sourceAttempt":"WORK-0001/ATTEMPT-0001","sourceLocalId":"CAND-A1-001","title":"...","category":"correctness","primaryLocation":{"path":"src/example.py","startLine":10,"endLine":12},"additionalLocations":[],"disposition":"open","reportClass":null,"findingId":null,"severity":null,"materiality":null,"materialityRationale":null,"confidence":"Medium","evidence":[],"counterargument":"...","trigger":"...","expected":"...","actual":"...","impact":"...","recommendation":"...","validationRefs":[],"duplicateOf":null,"withdrawal":null,"createdAt":"<UTC>","updatedAt":"<UTC>"}
+{"id":"OBS-000001","sourceWorkUnits":["WORK-0001"],"sourceAttempt":"WORK-0001/ATTEMPT-0001","sourceLocalId":"CAND-A1-001","title":"...","category":"correctness","primaryLocation":{"path":"src/example.py","startLine":10,"endLine":12},"additionalLocations":[],"disposition":"open","proposedDisposition":"unresolved","reportClass":null,"findingId":null,"severity":null,"materiality":null,"proposedMateriality":"non_material","materialityRationale":null,"proposedMaterialityRationale":"...","confidence":"Medium","affectedComponents":[],"affectedConfigurations":[],"affectedDeployments":[],"evidence":[],"counterargument":"...","trigger":"...","expected":"...","actual":"...","impact":"...","likelihood":"...","blastRadius":"...","reachability":"...","existingChecks":"...","reproduction":"...","recommendation":"...","regressionTest":"...","residualUncertainty":"...","validationRefs":[],"duplicateOf":null,"withdrawal":null,"createdAt":"<UTC>","updatedAt":"<UTC>"}
 ```
 
 Disposition is `open`, `validated`, `rejected`, `duplicate`, `unresolved`,
@@ -266,8 +266,14 @@ are gapless; each prior identity and digest must link. `agents/`, `baseline/`,
 Primary packets disposition every assigned profile-required angle;
 second-review packets disposition only the assigned angle and still preserve
 incidental candidates. Each candidate uses its attempt token and includes
-title, category, location, proposed disposition/materiality, rationale,
-evidence, counterargument, and validation references.
+title, category, locations, `proposedDisposition`, `proposedMateriality`,
+`proposedMaterialityRationale`, confidence, affected
+components/configurations/deployments, trigger, expected and actual behavior,
+impact, likelihood, blast radius, evidence, reachability, existing checks,
+reproduction, `recommendation`, regression test, counterargument, residual
+uncertainty, and validation references. Proposed values remain non-authoritative
+until canonical validation. Use an empty value when a detail is not yet
+established; never invent it.
 
 ### Specialist `validations.jsonl` (attempt-local)
 

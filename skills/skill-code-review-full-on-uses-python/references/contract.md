@@ -196,8 +196,27 @@ completion and returns the unit to revalidation.
 Partial or interrupted work preserves usable evidence, records exact remainder,
 and creates a new attempt. It never becomes an exclusion or not-applicable
 disposition. Run a representative pilot of about 100 paths, or the whole
-repository when smaller, before scaling. Exercise tool recovery, import,
-generation, audit, packet clarity, evidence quality, and bookkeeping ratio.
+repository when smaller, before scaling. The pilot must use the same dispatch
+adapter, executable or workflow, argument representation and parsing boundary,
+packet loading, result persistence, and import path intended for scaled waves,
+with production-shaped parameters. Exercise tool recovery, import, generation,
+audit, packet clarity, evidence quality, and bookkeeping ratio.
+
+Every wave fails closed. Parse and validate its input before constructing work;
+never default missing, malformed, or wrongly shaped input to an empty
+collection. Resolve the intended assignment identities against canonical
+unfinished work, reject empty, duplicate, or unknown identities, and record the
+intended identities and count before launch. Reconcile scheduled and started
+identities with that intended set. A non-empty intended wave that schedules or
+starts zero specialists is an orchestration failure, not successful
+completion. Preserve partial starts for exact retry. Permit an empty wave only
+when canonical state proves there is no executable work and record the no-op
+reason. A pilot that fails any dispatch check blocks repository-wide dispatch.
+
+Host adapters should run the repository's
+`references/dispatch-conformance.json` cases at their argument boundary.
+Serialized input is accepted only after explicit parsing; malformed, missing,
+unintentionally empty, duplicate, unknown, or zero-scheduled cases fail.
 
 A security-only remainder at level `off` is different: record it as
 profile-excluded or `deferred_by_profile`, preserve completed non-security

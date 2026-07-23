@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -70,6 +71,39 @@ class SkillValidationTests(unittest.TestCase):
         self.assertIn("--security-level <off|low|medium|high>", self.text)
         self.assertIn("defensive-assurance.md", self.text)
         self.assertIn("Do not build a prohibited-word list", self.text)
+
+    def test_scaled_dispatch_contract_fails_closed(self):
+        contract = (self.skill / "references/contract.md").read_text()
+        normalized_contract = re.sub(r"\s+", " ", contract)
+        normalized_skill = re.sub(r"\s+", " ", self.text)
+        for required in (
+            "same dispatch",
+            "argument representation and parsing boundary",
+            "never default missing, malformed, or wrongly shaped input to an empty collection",
+            "duplicate, or unknown identities",
+            "schedules or starts zero specialists",
+            "canonical state proves there is no executable work",
+            "references/dispatch-conformance.json",
+        ):
+            self.assertIn(required, normalized_contract)
+        self.assertIn("Fail closed at every dispatch boundary", normalized_skill)
+        self.assertIn("A pilot dispatch failure blocks scaling", normalized_skill)
+
+    def test_dispatch_conformance_fixture_covers_required_cases(self):
+        fixture_path = self.skill / "references/dispatch-conformance.json"
+        cases = json.loads(fixture_path.read_text())
+        outcomes = {case["name"]: case["expected"] for case in cases}
+        self.assertEqual(outcomes, {
+            "object-shaped input": "accepted",
+            "explicitly parsed serialized input": "accepted",
+            "malformed serialized input": "rejected",
+            "missing assignment list": "rejected",
+            "unintentionally empty assignment list": "rejected",
+            "duplicate assignment": "rejected",
+            "unknown assignment": "rejected",
+            "zero scheduled for non-empty wave": "rejected",
+            "canonical no-op": "accepted",
+        })
 
 
 if __name__ == "__main__":

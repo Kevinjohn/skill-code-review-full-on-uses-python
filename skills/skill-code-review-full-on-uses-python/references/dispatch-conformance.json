@@ -1,0 +1,64 @@
+[
+  {
+    "name": "object-shaped input",
+    "input": {"workIds": ["WORK-0001"]},
+    "knownWorkIds": ["WORK-0001"],
+    "scheduledWorkIds": ["WORK-0001"],
+    "expected": "accepted"
+  },
+  {
+    "name": "explicitly parsed serialized input",
+    "input": "{\"workIds\":[\"WORK-0001\"]}",
+    "parseSerialized": true,
+    "knownWorkIds": ["WORK-0001"],
+    "scheduledWorkIds": ["WORK-0001"],
+    "expected": "accepted"
+  },
+  {
+    "name": "malformed serialized input",
+    "input": "{\"workIds\":",
+    "parseSerialized": true,
+    "knownWorkIds": ["WORK-0001"],
+    "expected": "rejected"
+  },
+  {
+    "name": "missing assignment list",
+    "input": {},
+    "knownWorkIds": ["WORK-0001"],
+    "expected": "rejected"
+  },
+  {
+    "name": "unintentionally empty assignment list",
+    "input": {"workIds": []},
+    "knownWorkIds": ["WORK-0001"],
+    "expected": "rejected"
+  },
+  {
+    "name": "duplicate assignment",
+    "input": {"workIds": ["WORK-0001", "WORK-0001"]},
+    "knownWorkIds": ["WORK-0001"],
+    "expected": "rejected"
+  },
+  {
+    "name": "unknown assignment",
+    "input": {"workIds": ["WORK-9999"]},
+    "knownWorkIds": ["WORK-0001"],
+    "expected": "rejected"
+  },
+  {
+    "name": "zero scheduled for non-empty wave",
+    "input": {"workIds": ["WORK-0001"]},
+    "knownWorkIds": ["WORK-0001"],
+    "scheduledWorkIds": [],
+    "expected": "rejected"
+  },
+  {
+    "name": "canonical no-op",
+    "input": {"workIds": []},
+    "knownWorkIds": [],
+    "scheduledWorkIds": [],
+    "canonicalExecutableWorkIds": [],
+    "noOpReason": "canonical state contains no executable work",
+    "expected": "accepted"
+  }
+]

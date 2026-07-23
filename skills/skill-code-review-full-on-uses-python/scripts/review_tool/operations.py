@@ -300,6 +300,62 @@ def _allocate(rows: list[dict], field: str, prefix: str, width: int) -> str:
     return f"{prefix}-{(max(numbers, default=0) + 1):0{width}d}"
 
 
+def _candidate_observation(
+    candidate: dict,
+    *,
+    identifier: str,
+    source_work_units: list[str],
+    source_attempt: str,
+    default_title: str,
+    default_category: str,
+) -> dict:
+    return {
+        "id": identifier,
+        "sourceWorkUnits": source_work_units,
+        "sourceAttempt": source_attempt,
+        "sourceLocalId": candidate.get("localId"),
+        "title": candidate.get("title", default_title),
+        "category": candidate.get("category", default_category),
+        "primaryLocation": candidate.get("primaryLocation"),
+        "additionalLocations": candidate.get("additionalLocations", []),
+        "disposition": "open",
+        "proposedDisposition": candidate.get("proposedDisposition", candidate.get("disposition")),
+        "reportClass": None,
+        "findingId": None,
+        "severity": None,
+        "materiality": None,
+        "proposedMateriality": candidate.get("proposedMateriality", candidate.get("materiality")),
+        "materialityRationale": None,
+        "proposedMaterialityRationale": candidate.get(
+            "proposedMaterialityRationale",
+            candidate.get("materialityRationale"),
+        ),
+        "confidence": candidate.get("confidence", "Low"),
+        "affectedComponents": candidate.get("affectedComponents", []),
+        "affectedConfigurations": candidate.get("affectedConfigurations", []),
+        "affectedDeployments": candidate.get("affectedDeployments", []),
+        "evidence": candidate.get("evidence", []),
+        "counterargument": candidate.get("counterargument", ""),
+        "trigger": candidate.get("trigger", ""),
+        "expected": candidate.get("expected", ""),
+        "actual": candidate.get("actual", ""),
+        "impact": candidate.get("impact", ""),
+        "likelihood": candidate.get("likelihood", ""),
+        "blastRadius": candidate.get("blastRadius", ""),
+        "reachability": candidate.get("reachability", ""),
+        "existingChecks": candidate.get("existingChecks", ""),
+        "reproduction": candidate.get("reproduction", ""),
+        "recommendation": candidate.get("recommendation", candidate.get("remediation", "")),
+        "regressionTest": candidate.get("regressionTest", ""),
+        "residualUncertainty": candidate.get("residualUncertainty", ""),
+        "validationRefs": [],
+        "duplicateOf": None,
+        "withdrawal": None,
+        "createdAt": utc_now(),
+        "updatedAt": utc_now(),
+    }
+
+
 def import_specialist(root: Path, work_id: str, attempt_id: str, expected: str) -> dict:
     root = ensure_review_root(root)
     attempt_dir = root / "agents" / work_id / attempt_id
@@ -356,18 +412,14 @@ def import_specialist(root: Path, work_id: str, attempt_id: str, expected: str) 
         if not re.fullmatch(rf"CAND-{token}-\d{{3}}", str(local)) or local in candidate_map:
             raise ReviewToolError(f"invalid or duplicate local candidate identifier: {local}")
         candidate_map[local] = _allocate(observations, "id", "OBS", 6)
-        observations.append({
-            "id": candidate_map[local], "sourceWorkUnits": [work_id], "sourceAttempt": f"{work_id}/{attempt_id}",
-            "sourceLocalId": local, "title": candidate.get("title", "Untitled observation"),
-            "category": candidate.get("category", "unspecified"), "primaryLocation": candidate.get("primaryLocation"),
-            "additionalLocations": candidate.get("additionalLocations", []), "disposition": "open", "reportClass": None,
-            "findingId": None, "severity": None, "materiality": None, "materialityRationale": None,
-            "confidence": candidate.get("confidence", "Low"), "evidence": candidate.get("evidence", []),
-            "counterargument": candidate.get("counterargument", ""), "trigger": candidate.get("trigger", ""),
-            "expected": candidate.get("expected", ""), "actual": candidate.get("actual", ""),
-            "impact": candidate.get("impact", ""), "recommendation": candidate.get("recommendation", ""),
-            "validationRefs": [], "duplicateOf": None, "withdrawal": None, "createdAt": utc_now(), "updatedAt": utc_now(),
-        })
+        observations.append(_candidate_observation(
+            candidate,
+            identifier=candidate_map[local],
+            source_work_units=[work_id],
+            source_attempt=f"{work_id}/{attempt_id}",
+            default_title="Untitled observation",
+            default_category="unspecified",
+        ))
     validation_map: dict[str, str] = {}
     for row in local_validations:
         local = row.get("localId")
@@ -497,7 +549,14 @@ def import_audit(root: Path, attempt_id: str, expected: str) -> dict:
             raise ReviewToolError(f"invalid final-auditor candidate identifier: {local}")
         canonical = _allocate(observations, "id", "OBS", 6)
         candidate_map[local] = canonical
-        imported = {"id": canonical, "sourceWorkUnits": candidate.get("sourceWorkUnits", []), "sourceAttempt": f"FINAL-AUDIT/{attempt_id}", "sourceLocalId": local, "title": candidate.get("title", "Audit observation"), "category": candidate.get("category", "audit"), "primaryLocation": candidate.get("primaryLocation"), "additionalLocations": [], "disposition": "open", "reportClass": None, "findingId": None, "severity": None, "materiality": None, "materialityRationale": None, "confidence": candidate.get("confidence", "Low"), "evidence": candidate.get("evidence", []), "counterargument": candidate.get("counterargument", ""), "trigger": "", "expected": "", "actual": "", "impact": "", "recommendation": "", "validationRefs": [], "duplicateOf": None, "withdrawal": None, "createdAt": utc_now(), "updatedAt": utc_now()}
+        imported = _candidate_observation(
+            candidate,
+            identifier=canonical,
+            source_work_units=candidate.get("sourceWorkUnits", []),
+            source_attempt=f"FINAL-AUDIT/{attempt_id}",
+            default_title="Audit observation",
+            default_category="audit",
+        )
         observations.append(imported)
         imported_candidates.append(imported)
     for objection in result.get("objections", []):
@@ -553,13 +612,119 @@ GENERATED = [
 ]
 
 
+def _inline_code(value: str) -> str:
+    runs = re.findall(r"`+", value)
+    fence = "`" * (max((len(run) for run in runs), default=0) + 1)
+    padding = " " if value.startswith(("`", " ")) or value.endswith(("`", " ")) else ""
+    return f"{fence}{padding}{value}{padding}{fence}"
+
+
+def _format_location(location: Any) -> str:
+    if not isinstance(location, dict) or not isinstance(location.get("path"), str):
+        return "not recorded"
+    path = location["path"].strip()
+    if not path:
+        return "not recorded"
+    start = location.get("startLine")
+    end = location.get("endLine")
+    if not isinstance(start, int) or isinstance(start, bool) or start < 1:
+        return _inline_code(path)
+    suffix = f":{start}"
+    if isinstance(end, int) and not isinstance(end, bool) and end > start:
+        suffix += f"-{end}"
+    return _inline_code(f"{path}{suffix}")
+
+
+def _format_locations(row: dict) -> str:
+    additional = row.get("additionalLocations")
+    if not isinstance(additional, list):
+        additional = []
+    locations = [row.get("primaryLocation"), *additional]
+    rendered = []
+    for location in locations:
+        value = _format_location(location)
+        if value != "not recorded" and value not in rendered:
+            rendered.append(value)
+    return ", ".join(rendered) or "not recorded"
+
+
+def _format_value(value: Any) -> str:
+    if value is None or value == "" or value == []:
+        return "not recorded"
+    if isinstance(value, list):
+        values = [_format_value(item) for item in value]
+        return "; ".join(item for item in values if item != "not recorded") or "not recorded"
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)
+
+
+def _combine(*values: Any, labels: tuple[str, ...] | None = None) -> str:
+    rendered = [_format_value(value) for value in values]
+    present = [(index, value) for index, value in enumerate(rendered) if value != "not recorded"]
+    if not present:
+        return "not recorded"
+    if labels:
+        return "; ".join(f"{labels[index]}: {value}" for index, value in present)
+    return "; ".join(value for _, value in present)
+
+
 def _observation_view(title: str, rows: list[dict]) -> bytes:
     lines = [f"# {title}", ""]
     if not rows:
         lines.extend(["No records in this category.", ""])
     for row in rows:
         label = row.get("findingId") or row.get("id")
-        lines.extend([f"## {label} — {row.get('title', 'Untitled')}", "", f"- Disposition: {row.get('disposition')}", f"- Severity: {row.get('severity') or 'not assigned'}", f"- Confidence: {row.get('confidence') or 'not assigned'}", f"- Materiality: {row.get('materiality') or 'not assigned'}", f"- Location: {row.get('primaryLocation') or 'not recorded'}", ""])
+        assigned_severity = row.get("severity")
+        severity = assigned_severity or "not assigned"
+        anchor = re.sub(r"[^a-z0-9-]", "-", str(label).lower()).strip("-")
+        heading = f"## {label} — {row.get('title', 'Untitled')}"
+        if assigned_severity:
+            heading = f"## {label} — [{assigned_severity}] {row.get('title', 'Untitled')}"
+        lines.extend([
+            f'<a id="{anchor}"></a>',
+            heading,
+            "",
+            f"- **Observation:** {_format_value(row.get('id'))}",
+            f"- **Disposition:** {_format_value(row.get('disposition'))}",
+            f"- **Category:** {_format_value(row.get('category'))}",
+            f"- **Severity:** {severity}",
+            f"- **Materiality and rationale:** {_combine(row.get('materiality'), row.get('materialityRationale'))}",
+            f"- **Confidence:** {_format_value(row.get('confidence'))}",
+            f"- **Locations:** {_format_locations(row)}",
+            f"- **Affected components and configurations:** {_combine(row.get('affectedComponents'), row.get('affectedConfigurations'), row.get('affectedDeployments'), labels=('Components', 'Configurations', 'Deployments'))}",
+            f"- **Trigger or failure sequence:** {_format_value(row.get('trigger'))}",
+            f"- **Expected / actual:** {_combine(row.get('expected'), row.get('actual'), labels=('Expected', 'Actual'))}",
+            f"- **Impact, likelihood, and blast radius:** {_combine(row.get('impact'), row.get('likelihood'), row.get('blastRadius'), labels=('Impact', 'Likelihood', 'Blast radius'))}",
+            f"- **Evidence and reachability:** {_combine(row.get('evidence'), row.get('reachability'), labels=('Evidence', 'Reachability'))}",
+            f"- **Existing checks and tests:** {_format_value(row.get('existingChecks'))}",
+            f"- **Smallest reproduction:** {_format_value(row.get('reproduction'))}",
+            f"- **Remediation and regression test:** {_combine(row.get('recommendation'), row.get('regressionTest'), labels=('Remediation', 'Regression test'))}",
+            f"- **Counterargument:** {_format_value(row.get('counterargument'))}",
+            f"- **Residual uncertainty:** {_format_value(row.get('residualUncertainty'))}",
+            "",
+        ])
+    return ("\n".join(lines)).encode()
+
+
+def _observation_index(rows: list[dict]) -> bytes:
+    lines = ["# Findings index", ""]
+    if not rows:
+        lines.extend(["No records in this category.", ""])
+    for row in rows:
+        finding = row.get("findingId")
+        severity = row.get("severity") or "unassigned"
+        anchor = re.sub(r"[^a-z0-9-]", "-", str(finding).lower()).strip("-")
+        if row.get("disposition") == "withdrawn":
+            target = f"findings/withdrawn.md#{anchor}"
+        elif severity in {"P0", "P1", "P2", "P3", "P4"}:
+            target = f"findings/{severity}.md#{anchor}"
+        else:
+            target = None
+        label = f"{finding} — [{severity}] {row.get('title', 'Untitled')}"
+        linked = f"[{label}]({target})" if target else label
+        lines.append(f"- {linked} — {_format_locations(row)}")
+    lines.append("")
     return ("\n".join(lines)).encode()
 
 
@@ -586,7 +751,18 @@ def generate(root: Path) -> dict:
         "high": "ACTIVE ISOLATED",
     }.get(level, "INVALID")
     scope_note = "declared non-security scope" if level == "off" else f"declared {level} security scope"
-    outputs["README.md"] = (f"# Exhaustive repository review\n\n- Repository: {run.get('repositoryIdentity')}\n- Revision: {run.get('baselineCommit')} / {run.get('currentEpoch')}\n- Specification epoch: {run.get('specEpoch')}\n- Lifecycle: {run.get('status')}\n- Runtime capability: {run.get('runtimeCapability')}\n- Security level: {level}\n- Security assessment: {security_assessment}\n- Security-profile excluded paths: {len(security_exclusions)}\n- Verdict: {run.get('verdict') or 'nonterminal checkpoint'} ({scope_note})\n- Baseline paths: {len(paths)}\n- Work units: {len(units)}\n- Observations: {len(observations)}\n- Validations: {len(validations)}\n- Audit objections: {len(objections)}\n\nThis report is a generated view of canonical state and is not proof that no undiscovered defects exist.\n").encode()
+    severity_counts = {
+        severity: sum(
+            row.get("severity") == severity and row.get("disposition") == "validated"
+            for row in observations
+        )
+        for severity in ("P0", "P1", "P2", "P3", "P4")
+    }
+    severity_summary = " · ".join(
+        f"[{severity}](findings/{severity}.md): {count}"
+        for severity, count in severity_counts.items()
+    )
+    outputs["README.md"] = (f"# Exhaustive repository review\n\n- Repository: {run.get('repositoryIdentity')}\n- Revision: {run.get('baselineCommit')} / {run.get('currentEpoch')}\n- Specification epoch: {run.get('specEpoch')}\n- Lifecycle: {run.get('status')}\n- Runtime capability: {run.get('runtimeCapability')}\n- Security level: {level}\n- Security assessment: {security_assessment}\n- Security-profile excluded paths: {len(security_exclusions)}\n- Verdict: {run.get('verdict') or 'nonterminal checkpoint'} ({scope_note})\n- Baseline paths: {len(paths)}\n- Work units: {len(units)}\n- Observations: {len(observations)}\n- Validations: {len(validations)}\n- Audit objections: {len(objections)}\n\n## Findings\n\n{severity_summary}\n\nSee the [findings index](findings-index.md) for a concise list linking to complete finding details.\n\nThis report is a generated view of canonical state and is not proof that no undiscovered defects exist.\n").encode()
     coverage = ["# Coverage ledger", ""] + [f"- {unit.get('id')}: {unit.get('status')} — {', '.join(unit.get('paths', []))}" for unit in units]
     if security_exclusions:
         coverage.extend(["", "## Security-profile exclusions", ""])
@@ -595,7 +771,7 @@ def generate(root: Path) -> dict:
             for row in security_exclusions
         )
     outputs["coverage-ledger.md"] = ("\n".join(coverage) + "\n").encode()
-    outputs["findings-index.md"] = _observation_view("Findings index", [row for row in observations if row.get("findingId")])
+    outputs["findings-index.md"] = _observation_index([row for row in observations if row.get("findingId")])
     for severity in ("P0", "P1", "P2", "P3", "P4"):
         outputs[f"findings/{severity}.md"] = _observation_view(f"{severity} findings", [row for row in observations if row.get("severity") == severity and row.get("disposition") == "validated"])
     mappings = {

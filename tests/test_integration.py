@@ -89,13 +89,31 @@ class IntegrationTests(unittest.TestCase):
                 "notInspected": {"paths": [], "symbols": []},
                 "angleDispositions": {str(number): {"status": "reviewed", "evidence": evidence} for number in range(1, 11)},
                 "secondReviewResults": [],
-                "candidates": [{"localId": "CAND-A1-001", "title": "Fixture question", "category": "question", "primaryLocation": {"path": "example.py", "startLine": 1, "endLine": 1}, "confidence": "Low", "evidence": ["fixture"], "counterargument": "none", "validationRefs": ["AVAL-A1-001"]}],
+                "candidates": [{
+                    "localId": "CAND-A1-001", "title": "Fixture question", "category": "question",
+                    "primaryLocation": {"path": "example.py", "startLine": 1, "endLine": 1},
+                    "proposedDisposition": "unresolved", "proposedMateriality": "non_material",
+                    "proposedMaterialityRationale": "The fixture is informational.",
+                    "confidence": "Low", "affectedConfigurations": ["fixture"], "evidence": ["fixture"],
+                    "likelihood": "unlikely", "blastRadius": "fixture only", "reachability": "direct",
+                    "existingChecks": "none", "reproduction": "read the constant",
+                    "recommendation": "answer the question", "regressionTest": "retain the fixture",
+                    "counterargument": "none", "residualUncertainty": "none",
+                    "validationRefs": ["AVAL-A1-001"],
+                }],
                 "residualUncertainty": [], "remainingScope": {"paths": [], "symbols": [], "angles": []},
             }
             (attempt_dir / "result.json").write_text(json.dumps(result))
             validation = {"localId": "AVAL-A1-001", "validationClass": "ordinary", "command": "python3 -m py_compile example.py", "cwd": str(repository), "environmentSummary": "temporary fixture", "startedAt": "2026-01-01T00:00:00Z", "endedAt": "2026-01-01T00:00:00Z", "exitStatus": 0, "result": "passed", "limitations": [], "createdArtifacts": [], "supportsCandidates": ["CAND-A1-001"]}
             (attempt_dir / "validations.jsonl").write_text(json.dumps(validation) + "\n")
             self.run_tool("import", "--review-dir", str(review), "--work-id", "WORK-0001", "--attempt-id", "ATTEMPT-0001", "--expected-digest", state_digest(review))
+            imported_observation = json.loads((review / "observations.jsonl").read_text())
+            self.assertEqual(imported_observation["affectedConfigurations"], ["fixture"])
+            self.assertEqual(imported_observation["proposedDisposition"], "unresolved")
+            self.assertEqual(imported_observation["proposedMateriality"], "non_material")
+            self.assertIsNone(imported_observation["materiality"])
+            self.assertEqual(imported_observation["regressionTest"], "retain the fixture")
+            self.assertEqual(imported_observation["residualUncertainty"], "none")
             self.run_tool("generate", "--review-dir", str(review))
             self.run_tool("check", "--review-dir", str(review), "--json")
             self.run_tool("audit", "--review-dir", str(review), "--mode", "checkpoint", "--json")
@@ -175,7 +193,12 @@ class IntegrationTests(unittest.TestCase):
                 "status": "complete", "baselineContentSetHash": None, "finalWorkUnitSetHash": "empty-work-set",
                 "mechanicalAuditHash": "mechanical", "reportManifestHash": report_hash,
                 "tierAUnitsInspected": [], "sampledUnits": [], "excludedClassesSampled": [], "notApplicableClassesSampled": [],
-                "candidates": [{"localId": "CAND-A1-001", "title": "Audit candidate", "category": "audit", "primaryLocation": None, "validationRefs": ["AVAL-A1-001"]}],
+                "candidates": [{
+                    "localId": "CAND-A1-001", "title": "Audit candidate", "category": "audit",
+                    "primaryLocation": None, "affectedConfigurations": ["audit fixture"],
+                    "regressionTest": "retain the audit fixture",
+                    "residualUncertainty": "none", "validationRefs": ["AVAL-A1-001"],
+                }],
                 "objections": [{"localId": "AAOB-A1-001", "affectedPaths": [], "workUnits": [], "materiality": "non_material", "evidence": ["fixture"], "requiredResolution": "Disposition candidate", "candidateRefs": ["CAND-A1-001"]}],
                 "residualUncertainty": [], "remainingScope": {"workUnits": [], "classes": [], "checks": []},
             }
@@ -187,6 +210,8 @@ class IntegrationTests(unittest.TestCase):
             validations = [json.loads(line) for line in (review / "validations.jsonl").read_text().splitlines()]
             objections = [json.loads(line) for line in (review / "audit-objections.jsonl").read_text().splitlines()]
             self.assertEqual(observations[0]["validationRefs"], ["VAL-000001"])
+            self.assertEqual(observations[0]["affectedConfigurations"], ["audit fixture"])
+            self.assertEqual(observations[0]["regressionTest"], "retain the audit fixture")
             self.assertEqual(validations[0]["observationIds"], ["OBS-000001"])
             self.assertEqual(objections[0]["candidateRefs"], ["OBS-000001"])
 

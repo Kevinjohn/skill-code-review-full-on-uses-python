@@ -9,7 +9,15 @@ from tests.helpers import CONTRACT, PACK, clean_unit, new_review
 from review_tool.checks import check_review
 from review_tool.errors import ReviewToolError
 from review_tool.io import canonical_bytes, load_json, load_jsonl, normalize_relative, safe_child, state_digest
-from review_tool.operations import apply_mutation, deterministic_sample, generate, import_specialist, initialize
+from review_tool.operations import (
+    _format_location,
+    _observation_view,
+    apply_mutation,
+    deterministic_sample,
+    generate,
+    import_specialist,
+    initialize,
+)
 from review_tool.references import extract_reference, mandatory_block
 from review_tool.security import permitted_validation_classes, security_level, validation_class_allowed
 from review_tool.transactions import recover, simulate_transaction
@@ -121,6 +129,120 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(check_review(review)["ok"])
             (review / "README.md").write_text("stale")
             self.assertTrue(any("generated output changed" in issue for issue in check_review(review)["issues"]))
+
+    def test_location_rendering_handles_supported_shapes(self):
+        self.assertEqual(
+            _format_location({"path": "src/auth/token-store.ts", "startLine": 84, "endLine": 113}),
+            "`src/auth/token-store.ts:84-113`",
+        )
+        self.assertEqual(
+            _format_location({"path": "src/auth/token-store.ts", "startLine": 84, "endLine": 84}),
+            "`src/auth/token-store.ts:84`",
+        )
+        self.assertEqual(_format_location({"path": "src/auth/token-store.ts"}), "`src/auth/token-store.ts`")
+        self.assertEqual(_format_location(None), "not recorded")
+        self.assertEqual(_format_location({"startLine": 84}), "not recorded")
+
+    def test_observation_view_renders_complete_finding_details(self):
+        row = {
+            "id": "OBS-000001",
+            "findingId": "DBR-0001",
+            "title": "Token writes are not atomic",
+            "disposition": "validated",
+            "category": "correctness",
+            "severity": "P1",
+            "materiality": "material",
+            "materialityRationale": "Authentication can fail.",
+            "confidence": "High",
+            "primaryLocation": {"path": "src/auth/token-store.ts", "startLine": 84, "endLine": 113},
+            "additionalLocations": [{"path": "src/auth/session.ts", "startLine": 22, "endLine": 22}],
+            "affectedComponents": ["token store"],
+            "affectedConfigurations": ["file-backed sessions"],
+            "affectedDeployments": ["desktop"],
+            "trigger": "The process exits between writes.",
+            "expected": "The prior token remains readable.",
+            "actual": "The token file is truncated.",
+            "impact": "Users are signed out.",
+            "likelihood": "Plausible during shutdown.",
+            "blastRadius": "One local account.",
+            "evidence": ["A direct reproduction failed."],
+            "reachability": "Called by the normal login path.",
+            "existingChecks": "The unit test uses an in-memory store.",
+            "reproduction": "Interrupt the second write.",
+            "recommendation": "Write and rename a temporary file.",
+            "regressionTest": "Interrupt each persistence boundary.",
+            "counterargument": "The operating system usually buffers the write.",
+            "residualUncertainty": "Filesystem-specific rename behavior.",
+        }
+        report = _observation_view("P1 findings", [row]).decode()
+        for heading in (
+            "Category",
+            "Materiality and rationale",
+            "Affected components and configurations",
+            "Trigger or failure sequence",
+            "Expected / actual",
+            "Impact, likelihood, and blast radius",
+            "Evidence and reachability",
+            "Existing checks and tests",
+            "Smallest reproduction",
+            "Remediation and regression test",
+            "Counterargument",
+            "Residual uncertainty",
+        ):
+            self.assertIn(f"**{heading}:**", report)
+        self.assertIn("`src/auth/token-store.ts:84-113`", report)
+        self.assertIn("`src/auth/session.ts:22`", report)
+        self.assertIn("Components: token store; Configurations: file-backed sessions; Deployments: desktop", report)
+        self.assertNotIn("{'path':", report)
+
+    def test_observation_view_marks_missing_details_honestly(self):
+        report = _observation_view(
+            "Questions",
+            [{"id": "OBS-000001", "title": "Legacy observation", "disposition": "unresolved"}],
+        ).decode()
+        self.assertIn("**Locations:** not recorded", report)
+        self.assertIn("**Residual uncertainty:** not recorded", report)
+
+    def test_generated_summary_links_to_complete_finding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            review = new_review(Path(temporary))
+            observation = {
+                "id": "OBS-000001",
+                "findingId": "DBR-0001",
+                "title": "Fixture finding",
+                "disposition": "validated",
+                "reportClass": "finding",
+                "severity": "P1",
+                "primaryLocation": {"path": "src/example.py", "startLine": 1, "endLine": 1},
+            }
+            (review / "observations.jsonl").write_text(json.dumps(observation) + "\n")
+            generate(review)
+            summary = (review / "README.md").read_text()
+            index = (review / "findings-index.md").read_text()
+            detail = (review / "findings/P1.md").read_text()
+            self.assertIn("[P1](findings/P1.md): 1", summary)
+            self.assertIn("[findings index](findings-index.md)", summary)
+            self.assertIn("[DBR-0001 — [P1] Fixture finding](findings/P1.md#dbr-0001)", index)
+            self.assertIn('<a id="dbr-0001"></a>', detail)
+
+    def test_findings_index_links_withdrawn_finding_to_withdrawn_view(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            review = new_review(Path(temporary))
+            observation = {
+                "id": "OBS-000001",
+                "findingId": "DBR-0001",
+                "title": "Withdrawn fixture",
+                "disposition": "withdrawn",
+                "reportClass": "finding",
+                "severity": "P2",
+                "withdrawal": {"reason": "Defeated by validation."},
+            }
+            (review / "observations.jsonl").write_text(json.dumps(observation) + "\n")
+            generate(review)
+            index = (review / "findings-index.md").read_text()
+            withdrawn = (review / "findings/withdrawn.md").read_text()
+            self.assertIn("(findings/withdrawn.md#dbr-0001)", index)
+            self.assertIn('<a id="dbr-0001"></a>', withdrawn)
 
     def test_security_profile_defaults_and_report_scope(self):
         with tempfile.TemporaryDirectory() as temporary:
