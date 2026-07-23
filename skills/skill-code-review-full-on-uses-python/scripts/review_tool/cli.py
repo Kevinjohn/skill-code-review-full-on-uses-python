@@ -12,6 +12,7 @@ from .checks import check_review
 from .errors import ReviewToolError
 from .io import ensure_review_root, state_digest
 from .operations import apply_mutation, audit, generate, import_audit, import_specialist, initialize
+from .security import SECURITY_LEVELS
 from .transactions import recover
 
 
@@ -29,6 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--contract", type=Path, required=True)
     init.add_argument("--reference-pack", type=Path, required=True)
     init.add_argument("--runtime-capability", choices=("continuous", "persistent_task", "external_supervisor", "none"), default="none")
+    init.add_argument(
+        "--security-level",
+        choices=SECURITY_LEVELS,
+        default=None,
+        help="Security review depth; defaults to off for a new review",
+    )
 
     check = sub.add_parser("check", help="Validate canonical state and integrity invariants")
     _review_dir(check)
@@ -88,7 +95,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "init":
-            result = initialize(args.review_dir, args.contract, args.reference_pack, args.runtime_capability)
+            result = initialize(
+                args.review_dir,
+                args.contract,
+                args.reference_pack,
+                args.runtime_capability,
+                security_level=args.security_level or "off",
+                security_source="user" if args.security_level else "default",
+            )
         else:
             root = ensure_review_root(args.review_dir)
             recovery = recover(root)

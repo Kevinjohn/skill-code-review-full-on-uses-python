@@ -36,13 +36,31 @@ runtime explicitly establishes a stronger capability. If the user explicitly
 requests a durable task and the host supports one, create it before substantive
 inspection. Otherwise do not pretend the Skill creates persistence.
 
+## Resolve security level
+
+Resolve exactly one level before architecture mapping or worker creation:
+
+- `off` (default): exclude security review and security validation;
+- `low`: passive security source review only;
+- `medium`: include local static security validation;
+- `high`: include active validation only in isolated local review-owned
+  environments.
+
+Accept `--security-level off|low|medium|high` or an equivalent explicit
+natural-language request. Do not ask when omitted; use `off`. Never infer or
+increase the level from repository contents, available tools, model capability,
+or worker output. Read the Reference Pack security-level extract before
+constructing paths, units, manifests, or packets when it exists. A legacy
+snapshot without that extract keeps its compatibility level of `high`.
+
 ## Start or resume safely
 
 1. Capture the pre-artifact repository baseline before creating nonessential
    files. Include the commit plus staged, unstaged, deleted, renamed, symlink,
    submodule, and non-ignored untracked content. Default to a frozen baseline.
 2. Resolve resumable work through `code-reviews/LATEST` and canonical
-   `run.json` as the contract permits.
+   `run.json` as the contract permits. Treat security level as part of run
+   compatibility. A different level requires a fresh run.
 3. Establish the bundled utility with `scripts/review-tool --help` and a
    bounded self-test before relying on it.
 4. Initialize a new review with:
@@ -50,7 +68,8 @@ inspection. Otherwise do not pretend the Skill creates persistence.
    ```text
    scripts/review-tool init --review-dir <path> \
      --contract references/contract.md \
-     --reference-pack references/reference-pack.md
+     --reference-pack references/reference-pack.md \
+     --security-level <off|low|medium|high>
    ```
 
    Initialization snapshots the editable specifications into the review and
@@ -69,9 +88,10 @@ Use the host's bounded specialist-agent mechanism when it exists and is
 permitted. Reserve top-level capacity for architecture, assignments, imports,
 validation, reconciliation, tail review, and audit. Send compact assignment
 packets containing only assigned scope, immutable manifest identities,
-relevant extracted references, output schemas, and the mandatory specialist
-block. Never send the full contract, complete Reference Pack, conversation
-history, or unrelated findings.
+the inherited security level and permitted validation classes, relevant
+extracted references, output schemas, and the mandatory specialist block.
+Never send the full contract, complete Reference Pack, conversation history,
+or unrelated findings.
 
 Persist partial evidence from interrupted attempts and reassign the exact
 remaining paths, symbols, angles, and validations. An interruption is never an
@@ -80,12 +100,17 @@ mechanism exists, execute the same semantic units sequentially and record the
 limitation honestly.
 
 For every non-excluded baseline path, assign exactly one primary semantic work
-unit. Apply all ten review angles to every unit. Require independent scoped
-second review for each recorded Tier A requirement. Preserve every candidate,
-including rejected, duplicate, unresolved, withdrawn, low-severity, test,
-documentation, nit, suggestion, and question records. Continue after severe
-findings. Run all seven phases, including cross-component reconciliation,
-dedicated tail review, candidate validation, and independent final audit.
+unit. Keep all ten angle states, but at level `off` exclude dedicated
+security-only paths, pre-disposition Angle 5 as `excluded_by_profile`, and omit
+it from worker assignments. Review mixed paths through the remaining angles.
+Do not create, retry, or reassign security work at level `off`; minimally defer
+an incidental security candidate and continue with non-security scope. Require
+independent scoped second review for each profile-permitted Tier A requirement.
+Preserve every in-profile candidate, including rejected, duplicate, unresolved,
+withdrawn, low-severity, test, documentation, nit, suggestion, and question
+records. Continue after severe findings. Run all seven phases, including
+cross-component reconciliation, dedicated tail review, candidate validation,
+and independent final audit.
 
 ## Preserve read-only scope
 
@@ -106,5 +131,7 @@ checkpoint with exact remaining scope and next actions.
 Issue a terminal repository-wide verdict only when the full-completion or
 terminal-incomplete-handoff gate permits it. Label all earlier communication as
 a checkpoint, not release clearance. State reviewed revision, scope, status,
-remaining work, and next action. Never claim inspection or tests prove the
-absence of all defects.
+security level, remaining work, and next action. At level `off`, label security
+assessment `NOT PERFORMED`, report completion with the declared security
+exclusion, and qualify every verdict as applying only to the non-security
+scope. Never claim inspection or tests prove the absence of all defects.

@@ -130,6 +130,49 @@ class BrokenStateTests(unittest.TestCase):
         rewrite_canonical(self.review, "work-units.jsonl", units)
         self.assertIssue("wrong specEpoch")
 
+    def test_security_angle_assigned_while_profile_is_off(self):
+        units = load_jsonl(self.review / "work-units.jsonl")
+        units[0]["angles"]["5"] = {"status": "pending", "evidence": [], "specEpoch": None}
+        rewrite_canonical(self.review, "work-units.jsonl", units)
+        self.assertIssue("angle 5 must be excluded")
+
+    def test_dynamic_security_validation_rejected_while_profile_is_off(self):
+        validation = {
+            "id": "VAL-000001",
+            "sourceAttempt": "WORK-0001/ATTEMPT-0001",
+            "sourceLocalId": "AVAL-A1-001",
+            "workUnits": ["WORK-0001"],
+            "observationIds": [],
+            "securityLevel": "off",
+            "validationClass": "security_dynamic_isolated",
+        }
+        rewrite_canonical(self.review, "validations.jsonl", [validation])
+        self.assertIssue("validation class is not permitted")
+
+    def test_profile_deferral_requires_security_category(self):
+        observation = {
+            "id": "OBS-000001",
+            "category": "correctness",
+            "disposition": "deferred_by_profile",
+            "validationRefs": [],
+        }
+        rewrite_canonical(self.review, "observations.jsonl", [observation])
+        self.assertIssue("invalid profile deferral")
+
+    def test_security_profile_change_is_rejected(self):
+        run = load_json(self.review / "run.json")
+        run["securityProfile"]["level"] = "high"
+        changes = Path(self.temporary.name) / "security-change.json"
+        changes.write_bytes(canonical_bytes({"run.json": run}))
+        with self.assertRaisesRegex(ReviewToolError, "securityProfile is immutable"):
+            apply_mutation(self.review, state_digest(self.review), changes, None)
+
+    def test_malformed_security_profile_is_reported(self):
+        run = load_json(self.review / "run.json")
+        run["securityProfile"] = "off"
+        rewrite_canonical(self.review, "run.json", run)
+        self.assertIssue("securityProfile must be an object")
+
     def test_uncommitted_staged_transaction(self):
         simulate_transaction(self.review, {"architecture.md": b"changed\n"}, committed=False)
         self.assertIssue("uncommitted staged")

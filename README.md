@@ -2,11 +2,24 @@
 
 An open Agent Skills-format workflow for exhaustive, evidence-backed review of an entire repository.
 
-> **Status:** initial public implementation. The canonical Skill, portable Python state utility, tests, and CI are included; product-specific Plugin packaging is intentionally deferred.
+> **Current release:** 0.1.1. The canonical Skill, portable Python state
+> utility, tests, and CI are included; product-specific Plugin packaging is
+> intentionally deferred.
 
 ## What “full-on” means
 
-This is not a larger pull-request review. It accounts for every in-scope path, groups code into semantic work units, applies ten review angles, preserves every observation without severity curation, requires independent second review of critical surfaces, runs validation and cross-component reconciliation, protects commonly starved tail categories, and finishes with an independent audit. Large repositories may require multiple specialist waves or honest paused/resumed checkpoints.
+This is not a larger pull-request review. It accounts for every in-scope path,
+groups code into semantic work units, applies ten review-angle dispositions
+within a declared security level, preserves every in-scope observation without
+severity curation, requires independent second review of critical surfaces,
+runs validation and cross-component reconciliation, protects commonly starved
+tail categories, and finishes with an independent audit. Large repositories may
+require multiple specialist waves or honest paused/resumed checkpoints.
+
+Security review defaults to `off`. Callers can select `low` passive review,
+`medium` static validation, or `high` active validation in isolated local
+review-owned environments. Every level prohibits external targets and
+production services.
 
 The core Skill follows the open Agent Skills directory format. Its `contract.md` and `reference-pack.md` are editable and forkable: they are snapshotted for each review specification epoch, but they are not cryptographically pinned or coupled to a digest manifest. Runtime identities remain where they protect the repository baseline, canonical state, transactions, attempts, validations, deterministic audit sampling, and generated reports.
 
@@ -26,7 +39,7 @@ flowchart TD
     G --> H["Run representative pilot<br/>Verify tooling, packets, imports, and reports"]
 
     H --> I["Review every work unit"]
-    I --> J["Apply all 10 review angles"]
+    I --> J["Apply all 10 angle dispositions<br/>within the recorded security level"]
     J --> K{"Tier A requirements?"}
     K -->|Yes| L["Independent second review<br/>by a distinct reviewer"]
     K -->|No| M
@@ -35,7 +48,7 @@ flowchart TD
     M --> N["Run relevant validation<br/>Tests · static analysis · recovery · compatibility"]
     N --> O["Cross-component reconciliation"]
     O --> P["Dedicated tail review<br/>Tests · docs · SDKs · packaging · accessibility<br/>maintainability · nits · questions"]
-    P --> Q["Validate and deduplicate every candidate"]
+    P --> Q["Validate and deduplicate every in-profile candidate"]
 
     Q --> R{"Candidate disposition"}
     R -->|Validated| S["Assign finding ID and severity<br/>P0–P4"]
@@ -67,9 +80,12 @@ flowchart TD
     U -.-> I4
 ```
 
-Every path is accounted for, every work unit receives all ten review angles,
-critical surfaces get independent review, and the process cannot issue a
-passing verdict until validation and the final audit are reconciled.
+Every path is accounted for, every work unit receives all ten angle
+dispositions, critical in-profile surfaces get independent review, and the
+process cannot issue a passing verdict until validation and the final audit are
+reconciled. At security level `off`, dedicated security-only paths and Angle 5
+are explicitly profile-excluded, reports say `Security assessment: NOT
+PERFORMED`, and verdicts are qualified to the non-security scope.
 
 ## Repository layout
 
@@ -241,6 +257,58 @@ $skill-code-review-full-on-uses-python Run or resume a complete review of this r
 /skill-code-review-full-on-uses-python Perform a full-on repository and database review where applicable.
 Use the skill-code-review-full-on-uses-python skill to run a complete repository review.
 ```
+
+## Security review controls
+
+Security review is deliberately opt-in. A new review uses security level
+`off` unless the request explicitly selects another level:
+
+```text
+$skill-code-review-full-on-uses-python Run a complete review with --security-level low.
+/skill-code-review-full-on-uses-python Run a complete review with --security-level medium.
+Use the skill-code-review-full-on-uses-python skill with security level high.
+```
+
+The bundled utility accepts the same setting during initialization:
+
+```bash
+skills/skill-code-review-full-on-uses-python/scripts/review-tool init \
+  --review-dir code-reviews/20260723T120000Z \
+  --contract skills/skill-code-review-full-on-uses-python/references/contract.md \
+  --reference-pack skills/skill-code-review-full-on-uses-python/references/reference-pack.md \
+  --security-level medium
+```
+
+Omit `--security-level` to create an `off` run.
+
+| Level | Source review | Security tools and scans | Active validation |
+|---|---|---|---|
+| `off` (default) | Security review excluded | None | None |
+| `low` | Passive review of security-sensitive code | None | None |
+| `medium` | Same as `low` | Repository-authorized local static checks, such as SAST, CodeQL security queries, dependency vulnerability audits, secret scanning, and static cryptography/TLS/configuration checks | None |
+| `high` | Same as `medium` | Same as `medium` | Non-destructive validation against isolated local fixtures and ephemeral, review-owned services |
+
+At `off`, the workflow does not create security-specific workers, perform
+threat modelling, run security scans, construct adversarial tests, or attempt
+vulnerability reproduction. Dedicated security-only paths and the security
+review angle are recorded as profile exclusions. Mixed-purpose files are still
+reviewed for their non-security behavior, and ordinary repository test suites
+remain allowed; the workflow must not target or expand their security cases.
+
+Every level prohibits production or external targets, real credentials,
+destructive actions, persistence, unrestricted network scanning, and mutation
+of external services. `high` increases defensive depth but does not relax
+those boundaries.
+
+The selected level is persisted for the run and inherited by every worker.
+Worker manifests carry both the level and its permitted validation classes.
+The utility verifies those declarations and rejects validation records whose
+declared class exceeds the profile. Validation must be classified by purpose
+and effect; security work cannot be relabelled as ordinary validation to bypass
+the profile. Changing the level requires a fresh run, and it is never escalated
+automatically because of repository contents, available tools, worker output,
+or model capability. Legacy runs created before profiles existed retain their
+original `high` behavior so their scope does not silently change during resume.
 
 Ordinary pull-request, diff-only, quick, severity-limited, and narrow reviews should use a smaller review workflow.
 

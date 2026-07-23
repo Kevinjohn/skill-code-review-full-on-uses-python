@@ -66,6 +66,12 @@ def extract_reference(source: bytes) -> list[Extract]:
         ("handoff.md", "R8. Handoff contents"),
         ("installation.md", "R10. Deterministic extraction"),
     ]
+    headings = {
+        match.group(2).decode("utf-8").strip()
+        for match in HEADING.finditer(source)
+    }
+    if "R3A. Security levels" in headings:
+        definitions.insert(6, ("security-levels.md", "R3A. Security levels"))
     extracts: list[Extract] = []
     for filename, title in definitions:
         start, end = heading_range(source, title)

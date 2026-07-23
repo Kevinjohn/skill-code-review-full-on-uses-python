@@ -14,6 +14,11 @@
   "excluded-path-assigned",
   "pass-with-material-concern",
   "wrong-specification-epoch",
+  "security-angle-assigned-while-profile-off",
+  "dynamic-security-validation-while-profile-off",
+  "invalid-profile-deferral",
+  "security-profile-change",
+  "malformed-security-profile",
   "uncommitted-staged-transaction",
   "committed-incomplete-transaction"
 ]

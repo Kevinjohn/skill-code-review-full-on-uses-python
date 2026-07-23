@@ -22,8 +22,10 @@ class SkillValidationTests(unittest.TestCase):
         self.assertEqual(set(fields), {"name", "description"})
         self.assertEqual(fields["name"], self.skill.name)
         self.assertRegex(fields["name"], r"^[a-z0-9-]+$")
+        self.assertLessEqual(len(fields["name"]), 64)
         self.assertTrue(fields["description"])
         self.assertLess(len(fields["description"]), 1024)
+        self.assertNotRegex(fields["description"], r"[<>]")
         self.assertIn("Do not use", fields["description"])
 
     def test_resources_and_size_targets(self):
@@ -60,6 +62,12 @@ class SkillValidationTests(unittest.TestCase):
         }
         for relative in required:
             self.assertTrue((ROOT / relative).exists(), relative)
+
+    def test_security_levels_are_explicit_and_default_off(self):
+        for level in ("off", "low", "medium", "high"):
+            self.assertIn(f"`{level}`", self.text)
+        self.assertIn("`off` (default)", self.text)
+        self.assertIn("--security-level <off|low|medium|high>", self.text)
 
 
 if __name__ == "__main__":

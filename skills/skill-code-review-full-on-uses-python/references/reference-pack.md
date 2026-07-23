@@ -43,6 +43,11 @@ explicit migration and full canonical revalidation.
   "verdict": null,
   "runtimeCapability": "continuous|persistent_task|external_supervisor|none",
   "capabilitySource": "harness_declared|absent_default_none",
+  "securityProfile": {
+    "level": "off|low|medium|high",
+    "source": "default|user",
+    "externalTargets": false
+  },
   "targetPolicy": "frozen_baseline|explicit_moving_target",
   "currentEpoch": "EPOCH-0001",
   "baselineCommit": null,
@@ -67,7 +72,9 @@ Do not store derived counts in `run.json`. Verdict remains null before a valid
 terminal handoff. A migration entry records an ID, old/new specification epoch,
 preserved source paths, changed sections, affected angles, whether whole-unit
 revalidation applies, operator authority, and time. Lifecycle transitions are
-those in the contract.
+those in the contract. New runs require `securityProfile`; runs created before
+this field existed retain their original behavior and are interpreted as
+`high`. A security level is immutable for one run.
 
 ### `paths.jsonl`
 
@@ -83,14 +90,17 @@ deprecated, documentation, schema, script, and release paths. Exclude only VCS
 internals, authorized review/validation output, or explicit user scope:
 
 ```json
-{"category":"review_output|validation_output|explicit_out_of_scope","rationale":"...","boundaryEvidence":["..."],"authorizedBy":"contract|user:<authority>"}
+{"category":"review_output|validation_output|security_profile|explicit_out_of_scope","rationale":"...","boundaryEvidence":["..."],"authorizedBy":"contract|securityProfile:off|user:<authority>"}
 ```
 
 Every in-scope row has exactly one current primary assignment; excluded rows
-have none. Derive `baselineContentSetHash` from a canonical path-sorted array of
-current rows. Derive each work-unit content identity equivalently. Derive the
-final work-unit-set identity from current units sorted by ID and projected to
-ID, epoch, current manifest identity, content-set identity, and tier.
+have none. `security_profile` is valid only at level `off`, only for a path
+whose primary purpose is security-specific, and requires concrete boundary
+evidence. Mixed-purpose paths remain assigned for non-security scope. Derive
+`baselineContentSetHash` from a canonical path-sorted array of current rows.
+Derive each work-unit content identity equivalently. Derive the final
+work-unit-set identity from current units sorted by ID and projected to ID,
+epoch, current manifest identity, content-set identity, and tier.
 
 ### `work-units.jsonl`
 
@@ -107,10 +117,14 @@ ID, epoch, current manifest identity, content-set identity, and tier.
   "title":"transaction commit path",
   "subsystem":"storage",
   "riskTier":"A",
+  "securityLevel":"off",
   "criticalReasons":["durability boundary"],
   "status":"pending",
   "reviewAttempts":[],
-  "angles":{"1":{"status":"pending","evidence":[],"specEpoch":null}},
+  "angles":{
+    "1":{"status":"pending","evidence":[],"specEpoch":null},
+    "5":{"status":"excluded_by_profile","evidence":[],"specEpoch":"SPEC-0001","profileExclusion":{"domain":"security","level":"off"}}
+  },
   "requiredSecondReviews":[{"id":"SR-001","angle":3,"scope":{"kind":"whole_unit"}}],
   "completedSecondReviews":[],
   "residualUncertainty":[],
@@ -123,7 +137,8 @@ All ten string angle keys `1` through `10` are mandatory. Attempt status is
 disposition is `pending`, `imported`, `rejected`, or
 `reconciled_interruption`. Work status is `pending`, `assigned`, `partial`,
 `complete`, `blocked`, or `needs_revalidation`. Angle status is `pending`,
-`reviewed`, `not_applicable`, `blocked`, or `needs_revalidation`.
+`reviewed`, `not_applicable`, `excluded_by_profile`, `blocked`, or
+`needs_revalidation`.
 
 Legal work transitions:
 
@@ -136,12 +151,14 @@ blocked -> pending | assigned
 needs_revalidation -> assigned | blocked
 ```
 
-Legal angle transitions are `pending -> reviewed|not_applicable|blocked`,
-`reviewed|not_applicable -> needs_revalidation`, `blocked -> pending`, and
-`needs_revalidation -> reviewed|not_applicable|blocked`. Same-state mutation
-must add evidence or another fact. Reviewed requires semantic evidence;
-not-applicable requires source- or architecture-backed applicability evidence.
-Both record the current `specEpoch`.
+Legal angle transitions are `pending -> reviewed|not_applicable|
+excluded_by_profile|blocked`, `reviewed|not_applicable|excluded_by_profile ->
+needs_revalidation`, `blocked -> pending`, and `needs_revalidation -> reviewed|
+not_applicable|excluded_by_profile|blocked`. Same-state mutation must add
+evidence or another fact. Reviewed requires semantic evidence; not-applicable
+requires source- or architecture-backed applicability evidence.
+`excluded_by_profile` is valid only for Angle 5 at security level `off` and
+records `profileExclusion` plus the current `specEpoch`.
 
 Evidence has this shape:
 
@@ -162,13 +179,15 @@ canonical observations. Whole-unit requirements need whole-unit coverage; item
 requirements accept whole-unit or a typed superset. The reviewer must differ
 from each primary contributor. Re-derived primary evidence must remain equal.
 
-Completion requires ten reviewed or validly not-applicable angles, all current
-second-review requirements, persisted observations, and explicit uncertainty.
+Completion requires ten dispositioned angles: reviewed or validly
+not-applicable angles plus the profile-excluded Angle 5 at level `off`. It also
+requires all current second-review requirements, persisted observations, and
+explicit uncertainty.
 
 ### Immutable unit manifest
 
 ```json
-{"workId":"WORK-0001","revision":1,"supersedes":null,"reason":"initial","revisionEpoch":"EPOCH-0001","reviewSpecVersion":1,"specEpoch":"SPEC-0001","riskTier":"A","contentSetHash":"...","paths":[{"path":"src/example.py","contentId":"..."}],"sizeTotals":{"productionFiles":1,"implementationLines":120},"limitException":null,"symbols":[],"entryPoints":[],"boundaries":[],"knownInvariants":[],"requiredAngleDispositions":[1,2,3,4,5,6,7,8,9,10],"requiredSecondReviews":[{"id":"SR-001","angle":3,"scope":{"kind":"whole_unit"}}],"repositoryInstructions":[],"permittedValidationScope":[],"outputSchema":"specialist-result-schema.md","preservedAttemptManifestHashes":[]}
+{"workId":"WORK-0001","revision":1,"supersedes":null,"reason":"initial","revisionEpoch":"EPOCH-0001","reviewSpecVersion":1,"specEpoch":"SPEC-0001","riskTier":"A","securityLevel":"off","contentSetHash":"...","paths":[{"path":"src/example.py","contentId":"..."}],"sizeTotals":{"productionFiles":1,"implementationLines":120},"limitException":null,"symbols":[],"entryPoints":[],"boundaries":[],"knownInvariants":[],"requiredAngleDispositions":[1,2,3,4,6,7,8,9,10],"requiredSecondReviews":[{"id":"SR-001","angle":3,"scope":{"kind":"whole_unit"}}],"repositoryInstructions":[],"permittedValidationScope":[],"permittedValidationClasses":["ordinary"],"outputSchema":"specialist-result-schema.md","preservedAttemptManifestHashes":[]}
 ```
 
 Successors increment revision, name the predecessor path and identity, explain
@@ -178,7 +197,7 @@ requirements may only grow or widen.
 ### Immutable attempt manifest
 
 ```json
-{"workId":"WORK-0001","attemptId":"ATTEMPT-0001","unitManifest":"assignments/WORK-0001/MANIFEST-0001.json","unitManifestHash":"...","packetType":"primary_semantic","reviewerExecutionId":"HOST-EXEC-1042","reviewSpecVersion":1,"specEpoch":"SPEC-0001","assignedScope":{"paths":["src/example.py"],"symbols":[],"angles":[1,2,3,4,5,6,7,8,9,10]},"secondReviewRequirementId":null,"independentFromAttemptIds":[],"primaryEvidenceSetHash":null,"repositoryInstructions":[],"permittedValidationScope":[],"outputDirectory":"agents/WORK-0001/ATTEMPT-0001"}
+{"workId":"WORK-0001","attemptId":"ATTEMPT-0001","unitManifest":"assignments/WORK-0001/MANIFEST-0001.json","unitManifestHash":"...","packetType":"primary_semantic","reviewerExecutionId":"HOST-EXEC-1042","reviewSpecVersion":1,"specEpoch":"SPEC-0001","securityLevel":"off","assignedScope":{"paths":["src/example.py"],"symbols":[],"angles":[1,2,3,4,6,7,8,9,10]},"secondReviewRequirementId":null,"independentFromAttemptIds":[],"primaryEvidenceSetHash":null,"repositoryInstructions":[],"permittedValidationScope":[],"permittedValidationClasses":["ordinary"],"outputDirectory":"agents/WORK-0001/ATTEMPT-0001"}
 ```
 
 Second-review manifests name one current requirement, its single angle, all
@@ -190,24 +209,31 @@ contributing primary attempts, and a sealed primary evidence identity.
 {"id":"OBS-000001","sourceWorkUnits":["WORK-0001"],"sourceAttempt":"WORK-0001/ATTEMPT-0001","sourceLocalId":"CAND-A1-001","title":"...","category":"correctness","primaryLocation":{"path":"src/example.py","startLine":10,"endLine":12},"additionalLocations":[],"disposition":"open","reportClass":null,"findingId":null,"severity":null,"materiality":null,"materialityRationale":null,"confidence":"Medium","evidence":[],"counterargument":"...","trigger":"...","expected":"...","actual":"...","impact":"...","recommendation":"...","validationRefs":[],"duplicateOf":null,"withdrawal":null,"createdAt":"<UTC>","updatedAt":"<UTC>"}
 ```
 
-Disposition is `open`, `validated`, `rejected`, `duplicate`, `unresolved`, or
-`withdrawn`. Legal ordinary transitions are `open -> validated|rejected|
-duplicate|unresolved`, `unresolved -> open|validated|rejected|duplicate`, and
-`validated -> withdrawn`. Validated and unresolved records use report class
-`finding`, `nit`, `suggestion`, `question`, `test_gap`, or `documentation`, and
-materiality `material` or `non_material` with rationale. P0/P1 is material.
-Duplicates resolve to canonical OBS or DBR identifiers. Rejections preserve
-the defeating evidence. Validated P0–P4 findings receive gapless DBR IDs.
+Disposition is `open`, `validated`, `rejected`, `duplicate`, `unresolved`,
+`withdrawn`, or `deferred_by_profile`. Legal ordinary transitions are `open ->
+validated|rejected|duplicate|unresolved|deferred_by_profile`, `unresolved ->
+open|validated|rejected|duplicate|deferred_by_profile`, and `validated ->
+withdrawn`. `deferred_by_profile` is valid only for an incidental security
+candidate at level `off`; retain only the minimum location and deferral
+information needed for traceability in
+`{"profileDeferral":{"securityLevel":"off","reason":"..."}}`, without developing
+or validating the candidate. Validated and unresolved records use report class
+`finding`, `nit`, `suggestion`, `question`, `test_gap`, or `documentation`,
+and materiality `material` or `non_material` with rationale. P0/P1 is material. Duplicates
+resolve to canonical OBS or DBR identifiers. Rejections preserve the defeating
+evidence. Validated P0–P4 findings receive gapless DBR IDs.
 
 ### `validations.jsonl`
 
 ```json
-{"id":"VAL-000001","sourceAttempt":"WORK-0001/ATTEMPT-0001","sourceLocalId":"AVAL-A1-001","workUnits":["WORK-0001"],"observationIds":["OBS-000001"],"command":"...","cwd":"...","environmentSummary":"...","startedAt":"<UTC>","endedAt":"<UTC>","exitStatus":0,"result":"passed","limitations":[],"createdArtifacts":[],"trackedTreeMutation":null}
+{"id":"VAL-000001","sourceAttempt":"WORK-0001/ATTEMPT-0001","sourceLocalId":"AVAL-A1-001","workUnits":["WORK-0001"],"observationIds":["OBS-000001"],"securityLevel":"off","validationClass":"ordinary","command":"...","cwd":"...","environmentSummary":"...","startedAt":"<UTC>","endedAt":"<UTC>","exitStatus":0,"result":"passed","limitations":[],"createdArtifacts":[],"trackedTreeMutation":null}
 ```
 
 Result is `passed`, `failed`, `blocked`, `not_run`, or `inconclusive`. The last
 three require a limitation with description, materiality, rationale, and
-remaining action. Every observation reference resolves.
+remaining action. Validation class is `ordinary`, `security_static`, or
+`security_dynamic_isolated` and must be permitted by the run security level.
+Every observation reference resolves.
 
 ### `audit-objections.jsonl`
 
@@ -234,28 +260,34 @@ are gapless; each prior identity and digest must link. `agents/`, `baseline/`,
 ### Specialist `result.json` (attempt-local)
 
 ```json
-{"workId":"WORK-0001","attemptId":"ATTEMPT-0001","reviewerExecutionId":"HOST-EXEC-1042","packetType":"primary_semantic","unitManifestHash":"...","attemptManifestHash":"...","specEpoch":"SPEC-0001","status":"complete","inspected":{"paths":[],"symbols":[]},"notInspected":{"paths":[],"symbols":[]},"angleDispositions":{"1":{"status":"reviewed","evidence":[]}},"secondReviewResults":[],"candidates":[],"residualUncertainty":[],"remainingScope":{"paths":[],"symbols":[],"angles":[]}}
+{"workId":"WORK-0001","attemptId":"ATTEMPT-0001","reviewerExecutionId":"HOST-EXEC-1042","packetType":"primary_semantic","unitManifestHash":"...","attemptManifestHash":"...","specEpoch":"SPEC-0001","securityLevel":"off","status":"complete","inspected":{"paths":[],"symbols":[]},"notInspected":{"paths":[],"symbols":[]},"angleDispositions":{"1":{"status":"reviewed","evidence":[]}},"secondReviewResults":[],"candidates":[],"residualUncertainty":[],"remainingScope":{"paths":[],"symbols":[],"angles":[]}}
 ```
 
-Primary packets disposition all ten angles; second-review packets disposition
-only the assigned angle and still preserve incidental candidates. Each
-candidate uses its attempt token and includes title, category, location,
-proposed disposition/materiality, rationale, evidence, counterargument, and
-validation references.
+Primary packets disposition every assigned profile-required angle;
+second-review packets disposition only the assigned angle and still preserve
+incidental candidates. Each candidate uses its attempt token and includes
+title, category, location, proposed disposition/materiality, rationale,
+evidence, counterargument, and validation references.
 
 ### Specialist `validations.jsonl` (attempt-local)
 
 ```json
-{"localId":"AVAL-A1-001","command":"...","cwd":"...","environmentSummary":"...","startedAt":"<UTC>","endedAt":"<UTC>","exitStatus":0,"result":"passed","limitations":[],"createdArtifacts":[],"supportsCandidates":["CAND-A1-001"]}
+{"localId":"AVAL-A1-001","validationClass":"ordinary","command":"...","cwd":"...","environmentSummary":"...","startedAt":"<UTC>","endedAt":"<UTC>","exitStatus":0,"result":"passed","limitations":[],"createdArtifacts":[],"supportsCandidates":["CAND-A1-001"]}
 ```
 
 Attempt token `A<n>` is the numeric attempt index without leading zeroes.
 Local identifiers have no authority outside their attempt directory.
 
+### Immutable final-auditor attempt manifest
+
+```json
+{"attemptId":"ATTEMPT-0001","reviewerExecutionId":"HOST-EXEC-9001","independentFromReviewerExecutionIds":["HOST-EXEC-1042"],"deterministicSample":[],"baselineContentSetHash":"...","finalWorkUnitSetHash":"...","mechanicalAuditHash":"...","reportManifestHash":"...","securityLevel":"off","permittedValidationClasses":["ordinary"]}
+```
+
 ### Final-auditor `result.json` (attempt-local)
 
 ```json
-{"attemptId":"ATTEMPT-0001","reviewerExecutionId":"HOST-EXEC-9001","attemptManifestHash":"...","specEpoch":"SPEC-0001","status":"complete","baselineContentSetHash":"...","finalWorkUnitSetHash":"...","mechanicalAuditHash":"...","reportManifestHash":"...","tierAUnitsInspected":[],"sampledUnits":[],"excludedClassesSampled":[],"notApplicableClassesSampled":[],"objections":[],"candidates":[],"residualUncertainty":[],"remainingScope":{"workUnits":[],"classes":[],"checks":[]}}
+{"attemptId":"ATTEMPT-0001","reviewerExecutionId":"HOST-EXEC-9001","attemptManifestHash":"...","specEpoch":"SPEC-0001","securityLevel":"off","status":"complete","baselineContentSetHash":"...","finalWorkUnitSetHash":"...","mechanicalAuditHash":"...","reportManifestHash":"...","tierAUnitsInspected":[],"sampledUnits":[],"excludedClassesSampled":[],"notApplicableClassesSampled":[],"objections":[],"candidates":[],"residualUncertainty":[],"remainingScope":{"workUnits":[],"classes":[],"checks":[]}}
 ```
 
 The audit import validates deterministic scope and independence, then rewrites
@@ -290,6 +322,51 @@ integration boundary. Promote when production reachability or material risk is
 found. Keep units cohesive and bounded; predefine symbol or region checkpoints
 for an exceptionally large single file and justify all other exceptions.
 
+## R3A. Security levels
+
+Resolve and persist exactly one security level before architecture mapping and
+work-unit construction. Default to `off`; never infer a higher level from
+repository contents, documentation, available tools, or model capability.
+Every unit, specialist attempt, and final-audit assignment inherits the exact
+run level and its ordered `permittedValidationClasses`. Classify validation by
+purpose and effect; never disguise security work as `ordinary` validation.
+Never let a worker escalate the profile.
+
+- **off — excluded:** do not create security-specific workers; exclude
+  dedicated security-only paths with `security_profile`; pre-disposition Angle
+  5 as `excluded_by_profile`; omit security second reviews; do not perform
+  threat modeling, security scanning, adversarial testing, or vulnerability
+  reproduction. Review mixed paths only through non-security angles. Ordinary
+  repository test suites remain allowed, but do not target, expand, or
+  reinterpret their security cases as security validation. Defer an incidental
+  security candidate without elaborating or validating it.
+- **low — passive:** inspect and reason about security-sensitive code and
+  report candidates, but do not run security tools, enumerate secrets,
+  construct malicious payloads, fuzz security boundaries, or produce
+  reproductions. Only `ordinary` validations are permitted.
+- **medium — static:** include `low` plus repository-authorized local SAST,
+  CodeQL security queries, dependency vulnerability audits, secret scanning,
+  and static cryptography, TLS, or configuration checks.
+  `security_static` validations are permitted. Never print or copy a discovered
+  secret; record only its type, location, and a safe fingerprint.
+- **high — active isolated:** include `medium` plus non-destructive dynamic
+  validation against isolated local fixtures, temporary databases, and
+  ephemeral services owned by the review. `security_dynamic_isolated`
+  validations are permitted. Keep reproductions minimal and defensive.
+
+Every level prohibits external targets, production services, persistence, use
+of real credentials or secret material, destructive action, unrestricted
+network scanning, and mutation of external services. `high` increases
+defensive depth; it never relaxes these boundaries. A run's security level is
+immutable. Start a fresh run to change it; old runs with no recorded profile
+retain legacy `high` behavior.
+
+At `off`, classify a dedicated security-only path using path metadata,
+documented purpose, and the minimum content necessary to establish the
+boundary. Do not substantively inspect it for security properties. The final
+auditor verifies the exclusion record, non-assignment, and boundary evidence;
+it does not reopen the excluded security review.
+
 ## R4. Mandatory specialist block
 
 <!-- BEGIN MANDATORY SPECIALIST BLOCK -->
@@ -304,8 +381,10 @@ for an exceptionally large single file and justify all other exceptions.
 > validation instead of silently dropping them. Do not assume another reviewer
 > will report an overlap. Use attempt-local candidate and validation identifiers
 > only; permanent identifiers are assigned at import. Preserve the supplied
-> reviewer execution identity exactly. Before returning, enumerate inspected
-> and uninspected paths and symbols, completed and pending angles, validations,
+> reviewer execution identity and security level exactly. Obey the security
+> level and validation-class limits in the assignment; never expand or escalate
+> them. Before returning, enumerate inspected and uninspected paths and
+> symbols, completed and pending angles, validations,
 > observations, and residual uncertainty. Mark the result `complete`, `partial`,
 > or `blocked`; partial or blocked results identify exact remaining scope.
 > Persist the result before sending a summary.
@@ -394,9 +473,11 @@ partials, uncertainty; remediation order; audit objections; and applicable gate.
 
 Terminal communication includes review path/state; revision/epoch/dirty state;
 verdict and recommendation; complete counts including withdrawn, rejected,
-duplicate, unresolved and tail classes; path and tier coverage; unit statuses;
-validation limitations; audit status; uncertainty; attempt, event-chain and
-verdict consistency; gate result; and a link to the generated README.
+duplicate, unresolved, profile-deferred, and tail classes; path and tier
+coverage; security-profile exclusions; unit statuses; validation limitations;
+audit status; uncertainty; attempt, event-chain and verdict consistency; gate
+result; and a link to the generated README and security-deferral view when
+applicable.
 
 ## R9. Review-angle checklists
 
@@ -438,6 +519,11 @@ sharding/rebalance, durability claims, regions and session guarantees. Describe
 node-and-message timelines.
 
 ### Angle 5 — Security and trust boundaries
+
+At level `off`, do not assign this angle; retain its orchestrator-created
+`excluded_by_profile` disposition. At level `low`, perform passive source
+review only. At level `medium`, permit static local security validation. At
+level `high`, permit active isolated validation within R3A.
 
 Review authentication and authorization on each operation, tenant/data/admin
 isolation, injection, parser bypass, deserialization, traversal, symlinks,
@@ -509,6 +595,7 @@ specialist-result-schema.md
 specialist-validation-schema.md
 final-auditor-result-schema.md
 risk-tiers.md
+security-levels.md
 mandatory-specialist-block.md
 cross-component.md
 finding-format.md

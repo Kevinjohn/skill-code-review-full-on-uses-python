@@ -27,18 +27,20 @@ class IntegrationTests(unittest.TestCase):
             (repository / "example.py").write_text("VALUE = 1\n")
             subprocess.run(["git", "-C", repository, "add", "example.py"], check=True)
             review = repository / "code-reviews/fixture"
-            self.run_tool("init", "--review-dir", str(review), "--contract", str(CONTRACT), "--reference-pack", str(PACK))
+            self.run_tool("init", "--review-dir", str(review), "--contract", str(CONTRACT), "--reference-pack", str(PACK), "--security-level", "high")
 
             path_row = {"path": "example.py", "revisionEpoch": "EPOCH-0001", "entryKind": "file", "baselineState": "staged", "contentId": "blob-1", "sizeBytes": 10, "implementationLines": 1, "language": "python", "subsystem": "core", "classification": "production", "exclusion": None}
             content_set = canonical_identity([path_row])
             unit_manifest = {
                 "workId": "WORK-0001", "revision": 1, "supersedes": None, "reason": "initial",
-                "revisionEpoch": "EPOCH-0001", "reviewSpecVersion": 1, "specEpoch": "SPEC-0001", "riskTier": "B",
+                "revisionEpoch": "EPOCH-0001", "reviewSpecVersion": 1, "specEpoch": "SPEC-0001", "riskTier": "B", "securityLevel": "high",
                 "contentSetHash": content_set, "paths": [{"path": "example.py", "contentId": "blob-1"}],
                 "sizeTotals": {"productionFiles": 1, "implementationLines": 1}, "limitException": None,
                 "symbols": [], "entryPoints": [], "boundaries": [], "knownInvariants": [],
                 "requiredAngleDispositions": list(range(1, 11)), "requiredSecondReviews": [],
-                "repositoryInstructions": [], "permittedValidationScope": [], "outputSchema": "specialist-result-schema.md",
+                "repositoryInstructions": [], "permittedValidationScope": [],
+                "permittedValidationClasses": ["ordinary", "security_static", "security_dynamic_isolated"],
+                "outputSchema": "specialist-result-schema.md",
                 "preservedAttemptManifestHashes": [],
             }
             unit_bytes = canonical_bytes(unit_manifest)
@@ -47,9 +49,12 @@ class IntegrationTests(unittest.TestCase):
                 "workId": "WORK-0001", "attemptId": "ATTEMPT-0001",
                 "unitManifest": "assignments/WORK-0001/MANIFEST-0001.json", "unitManifestHash": unit_hash,
                 "packetType": "primary_semantic", "reviewerExecutionId": "EXEC-001", "reviewSpecVersion": 1,
+                "securityLevel": "high",
                 "specEpoch": "SPEC-0001", "assignedScope": {"paths": ["example.py"], "symbols": [], "angles": list(range(1, 11))},
                 "secondReviewRequirementId": None, "independentFromAttemptIds": [], "primaryEvidenceSetHash": None,
-                "repositoryInstructions": [], "permittedValidationScope": [], "outputDirectory": "agents/WORK-0001/ATTEMPT-0001",
+                "repositoryInstructions": [], "permittedValidationScope": [],
+                "permittedValidationClasses": ["ordinary", "security_static", "security_dynamic_isolated"],
+                "outputDirectory": "agents/WORK-0001/ATTEMPT-0001",
             }
             attempt_bytes = canonical_bytes(attempt_manifest)
             attempt_hash = digest_bytes(attempt_bytes)
@@ -61,7 +66,7 @@ class IntegrationTests(unittest.TestCase):
                 "currentManifest": "assignments/WORK-0001/MANIFEST-0001.json", "currentManifestHash": unit_hash,
                 "manifestHistory": [{"revision": 1, "path": "assignments/WORK-0001/MANIFEST-0001.json", "hash": unit_hash}],
                 "contentSetHash": content_set, "paths": ["example.py"], "title": "miniature module", "subsystem": "core",
-                "riskTier": "B", "criticalReasons": [], "status": "assigned",
+                "riskTier": "B", "securityLevel": "high", "criticalReasons": [], "status": "assigned",
                 "reviewAttempts": [{"attemptId": "ATTEMPT-0001", "manifest": "assignments/WORK-0001/ATTEMPT-0001.json", "manifestHash": attempt_hash, "unitManifestHash": unit_hash, "packetType": "primary_semantic", "reviewerExecutionId": "EXEC-001", "independentFromAttemptIds": [], "status": "assigned", "resultHash": None, "importDisposition": "pending"}],
                 "angles": angles, "requiredSecondReviews": [], "completedSecondReviews": [], "residualUncertainty": [], "updatedAt": "2026-01-01T00:00:00Z",
             }
@@ -80,7 +85,7 @@ class IntegrationTests(unittest.TestCase):
             result = {
                 "workId": "WORK-0001", "attemptId": "ATTEMPT-0001", "reviewerExecutionId": "EXEC-001",
                 "packetType": "primary_semantic", "unitManifestHash": unit_hash, "attemptManifestHash": attempt_hash,
-                "specEpoch": "SPEC-0001", "status": "complete", "inspected": {"paths": ["example.py"], "symbols": []},
+                "specEpoch": "SPEC-0001", "securityLevel": "high", "status": "complete", "inspected": {"paths": ["example.py"], "symbols": []},
                 "notInspected": {"paths": [], "symbols": []},
                 "angleDispositions": {str(number): {"status": "reviewed", "evidence": evidence} for number in range(1, 11)},
                 "secondReviewResults": [],
@@ -88,7 +93,7 @@ class IntegrationTests(unittest.TestCase):
                 "residualUncertainty": [], "remainingScope": {"paths": [], "symbols": [], "angles": []},
             }
             (attempt_dir / "result.json").write_text(json.dumps(result))
-            validation = {"localId": "AVAL-A1-001", "command": "python3 -m py_compile example.py", "cwd": str(repository), "environmentSummary": "temporary fixture", "startedAt": "2026-01-01T00:00:00Z", "endedAt": "2026-01-01T00:00:00Z", "exitStatus": 0, "result": "passed", "limitations": [], "createdArtifacts": [], "supportsCandidates": ["CAND-A1-001"]}
+            validation = {"localId": "AVAL-A1-001", "validationClass": "ordinary", "command": "python3 -m py_compile example.py", "cwd": str(repository), "environmentSummary": "temporary fixture", "startedAt": "2026-01-01T00:00:00Z", "endedAt": "2026-01-01T00:00:00Z", "exitStatus": 0, "result": "passed", "limitations": [], "createdArtifacts": [], "supportsCandidates": ["CAND-A1-001"]}
             (attempt_dir / "validations.jsonl").write_text(json.dumps(validation) + "\n")
             self.run_tool("import", "--review-dir", str(review), "--work-id", "WORK-0001", "--attempt-id", "ATTEMPT-0001", "--expected-digest", state_digest(review))
             self.run_tool("generate", "--review-dir", str(review))
@@ -103,23 +108,60 @@ class IntegrationTests(unittest.TestCase):
 
     def test_cli_errors_and_unknown_arguments(self):
         with tempfile.TemporaryDirectory() as temporary:
-            process = self.run_tool("init", "--review-dir", str(Path(temporary) / "review"), "--contract", str(CONTRACT), "--reference-pack", str(PACK), "--unknown", expected=2)
+            base = Path(temporary)
+            process = self.run_tool("init", "--review-dir", str(base / "review"), "--contract", str(CONTRACT), "--reference-pack", str(PACK), "--unknown", expected=2)
             self.assertIn("unrecognized arguments", process.stderr)
             process = self.run_tool("check", "--review-dir", temporary, expected=2)
             self.assertIn("missing JSON", process.stderr)
+            process = self.run_tool("init", "--review-dir", str(base / "invalid"), "--contract", str(CONTRACT), "--reference-pack", str(PACK), "--security-level", "extreme", expected=2)
+            self.assertIn("invalid choice", process.stderr)
+
+    def test_cli_persists_each_security_level_and_rejects_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            for level in ("off", "low", "medium", "high"):
+                review = base / level
+                self.run_tool(
+                    "init",
+                    "--review-dir",
+                    str(review),
+                    "--contract",
+                    str(CONTRACT),
+                    "--reference-pack",
+                    str(PACK),
+                    "--security-level",
+                    level,
+                )
+                run = load_json(review / "run.json")
+                self.assertEqual(run["securityProfile"]["level"], level)
+                self.assertEqual(run["securityProfile"]["source"], "user")
+            process = self.run_tool(
+                "init",
+                "--review-dir",
+                str(base / "off"),
+                "--contract",
+                str(CONTRACT),
+                "--reference-pack",
+                str(PACK),
+                "--security-level",
+                "high",
+                expected=2,
+            )
+            self.assertIn("start a new review to change it", process.stderr)
 
     def test_final_auditor_atomic_import_with_validation(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             review = base / "review"
-            self.run_tool("init", "--review-dir", str(review), "--contract", str(CONTRACT), "--reference-pack", str(PACK))
+            self.run_tool("init", "--review-dir", str(review), "--contract", str(CONTRACT), "--reference-pack", str(PACK), "--security-level", "high")
             self.run_tool("generate", "--review-dir", str(review))
             report_hash = digest_bytes((review / "report-manifest.json").read_bytes())
             manifest = {
                 "attemptId": "ATTEMPT-0001", "reviewerExecutionId": "EXEC-AUDITOR",
                 "independentFromReviewerExecutionIds": ["EXEC-PRIMARY"], "deterministicSample": [],
                 "baselineContentSetHash": None, "finalWorkUnitSetHash": "empty-work-set",
-                "mechanicalAuditHash": "mechanical", "reportManifestHash": report_hash,
+                "mechanicalAuditHash": "mechanical", "reportManifestHash": report_hash, "securityLevel": "high",
+                "permittedValidationClasses": ["ordinary", "security_static", "security_dynamic_isolated"],
             }
             manifest_path = review / "assignments/FINAL-AUDIT/ATTEMPT-0001.json"
             changes_path = base / "audit-assignment.json"
@@ -129,7 +171,7 @@ class IntegrationTests(unittest.TestCase):
             attempt_dir.mkdir(parents=True)
             result = {
                 "attemptId": "ATTEMPT-0001", "reviewerExecutionId": "EXEC-AUDITOR",
-                "attemptManifestHash": digest_bytes(manifest_path.read_bytes()), "specEpoch": "SPEC-0001",
+                "attemptManifestHash": digest_bytes(manifest_path.read_bytes()), "specEpoch": "SPEC-0001", "securityLevel": "high",
                 "status": "complete", "baselineContentSetHash": None, "finalWorkUnitSetHash": "empty-work-set",
                 "mechanicalAuditHash": "mechanical", "reportManifestHash": report_hash,
                 "tierAUnitsInspected": [], "sampledUnits": [], "excludedClassesSampled": [], "notApplicableClassesSampled": [],
@@ -138,7 +180,7 @@ class IntegrationTests(unittest.TestCase):
                 "residualUncertainty": [], "remainingScope": {"workUnits": [], "classes": [], "checks": []},
             }
             (attempt_dir / "result.json").write_text(json.dumps(result))
-            validation = {"localId": "AVAL-A1-001", "command": "fixture", "cwd": str(base), "environmentSummary": "fixture", "startedAt": "2026-01-01T00:00:00Z", "endedAt": "2026-01-01T00:00:00Z", "exitStatus": 0, "result": "passed", "limitations": [], "createdArtifacts": [], "supportsCandidates": ["CAND-A1-001"]}
+            validation = {"localId": "AVAL-A1-001", "validationClass": "ordinary", "command": "fixture", "cwd": str(base), "environmentSummary": "fixture", "startedAt": "2026-01-01T00:00:00Z", "endedAt": "2026-01-01T00:00:00Z", "exitStatus": 0, "result": "passed", "limitations": [], "createdArtifacts": [], "supportsCandidates": ["CAND-A1-001"]}
             (attempt_dir / "validations.jsonl").write_text(json.dumps(validation) + "\n")
             self.run_tool("import-audit", "--review-dir", str(review), "--attempt-id", "ATTEMPT-0001", "--expected-digest", state_digest(review))
             observations = [json.loads(line) for line in (review / "observations.jsonl").read_text().splitlines()]

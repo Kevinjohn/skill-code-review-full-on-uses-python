@@ -11,6 +11,13 @@ from typing import Any
 from .errors import ReviewToolError
 from .io import canonical_bytes, canonical_identity, digest_bytes, load_json, load_jsonl, safe_child, state_digest
 from .references import extract_reference
+from .security import (
+    SECURITY_LEVELS,
+    has_declared_security_profile,
+    permitted_validation_classes,
+    security_level,
+    validation_class_allowed,
+)
 
 ID_PATTERNS = {
     "observations": re.compile(r"OBS-(\d{6})$"),
@@ -20,8 +27,8 @@ ID_PATTERNS = {
 }
 RUN_STATUSES = {"active", "paused", "concluded", "superseded"}
 UNIT_STATUSES = {"pending", "assigned", "partial", "complete", "blocked", "needs_revalidation"}
-ANGLE_STATUSES = {"pending", "reviewed", "not_applicable", "blocked", "needs_revalidation"}
-OBS_DISPOSITIONS = {"open", "validated", "rejected", "duplicate", "unresolved", "withdrawn"}
+ANGLE_STATUSES = {"pending", "reviewed", "not_applicable", "excluded_by_profile", "blocked", "needs_revalidation"}
+OBS_DISPOSITIONS = {"open", "validated", "rejected", "duplicate", "unresolved", "withdrawn", "deferred_by_profile"}
 
 
 def _issue(issues: list[str], condition: bool, message: str) -> None:
@@ -124,6 +131,26 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
     _issue(issues, bool(re.fullmatch(r"SPEC-\d{4}", str(run.get("specEpoch", "")))), "run.json specEpoch is invalid")
     _issue(issues, run.get("status") in RUN_STATUSES, "run.json status is invalid")
     _issue(issues, run.get("runtimeCapability") in {"continuous", "persistent_task", "external_supervisor", "none"}, "run.json runtimeCapability is invalid")
+    declared_profile = has_declared_security_profile(run)
+    level = security_level(run)
+    if "securityProfile" in run and not declared_profile:
+        issues.append("run.json securityProfile must be an object")
+    if declared_profile:
+        profile = run["securityProfile"]
+        _issue(issues, level in SECURITY_LEVELS, "run.json securityProfile level is invalid")
+        _issue(issues, profile.get("source") in {"default", "user"}, "run.json securityProfile source is invalid")
+        _issue(issues, profile.get("externalTargets") is False, "run.json securityProfile must prohibit external targets")
+        final_audit_assignments = root / "assignments" / "FINAL-AUDIT"
+        if final_audit_assignments.is_dir():
+            for manifest_path in sorted(final_audit_assignments.glob("*.json")):
+                manifest = load_json(manifest_path)
+                label = manifest_path.relative_to(root).as_posix()
+                _issue(issues, manifest.get("securityLevel") == level, f"{label}: securityLevel mismatch")
+                _issue(
+                    issues,
+                    manifest.get("permittedValidationClasses") == permitted_validation_classes(level),
+                    f"{label}: validation classes do not match security level",
+                )
 
     path_keys = [(row.get("revisionEpoch"), row.get("path")) for row in paths]
     if len(path_keys) != len(set(path_keys)):
@@ -145,6 +172,8 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
         _issue(issues, bool(re.fullmatch(r"WORK-\d{4}", str(uid or ""))), f"work unit has invalid identifier: {uid}")
         _issue(issues, unit.get("status") in UNIT_STATUSES, f"{uid}: invalid status transition or status {unit.get('status')!r}")
         _issue(issues, unit.get("specEpoch") == run.get("specEpoch"), f"{uid}: unit from wrong specEpoch")
+        if declared_profile:
+            _issue(issues, unit.get("securityLevel") == level, f"{uid}: securityLevel does not match run profile")
         for path in unit.get("paths", []):
             assignments[path] += 1
         unit_path_rows = [current_paths[path] for path in unit.get("paths", []) if path in current_paths]
@@ -159,7 +188,18 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
             if status in {"reviewed", "not_applicable"}:
                 _issue(issues, bool(angle.get("evidence")), f"{uid} angle {number}: semantic/applicability evidence required")
                 _issue(issues, angle.get("specEpoch") == run.get("specEpoch"), f"{uid} angle {number}: disposition from wrong specEpoch")
+            if status == "excluded_by_profile":
+                exclusion = angle.get("profileExclusion", {})
+                _issue(issues, number == "5" and level == "off", f"{uid} angle {number}: invalid profile exclusion")
+                _issue(issues, exclusion.get("domain") == "security" and exclusion.get("level") == "off", f"{uid} angle {number}: profile exclusion metadata is invalid")
+                _issue(issues, angle.get("specEpoch") == run.get("specEpoch"), f"{uid} angle {number}: profile exclusion from wrong specEpoch")
+        if declared_profile and level == "off":
+            _issue(issues, angles.get("5", {}).get("status") == "excluded_by_profile", f"{uid}: angle 5 must be excluded at security level off")
+        elif declared_profile:
+            _issue(issues, all(angle.get("status") != "excluded_by_profile" for angle in angles.values()), f"{uid}: profile exclusion is only valid at security level off")
         requirements = unit.get("requiredSecondReviews", [])
+        if declared_profile and level == "off":
+            _issue(issues, all(item.get("angle") != 5 for item in requirements), f"{uid}: security second review is not permitted at security level off")
         if unit.get("riskTier") == "A":
             _issue(issues, bool(requirements), f"{uid}: Tier A requires independent second reviews")
         completed = {item.get("requirementId"): item for item in unit.get("completedSecondReviews", [])}
@@ -171,6 +211,19 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
             attempt_status[key] = (attempt.get("status"), attempt.get("importDisposition"))
             if attempt.get("status") in {"complete", "partial", "blocked"} and attempt.get("importDisposition") == "pending":
                 issues.append(f"unreconciled specialist attempt: {key}")
+            if declared_profile:
+                attempt_manifest_path = safe_child(root, attempt.get("manifest", "invalid"))
+                if attempt_manifest_path.exists():
+                    attempt_manifest = load_json(attempt_manifest_path)
+                    _issue(issues, attempt_manifest.get("securityLevel") == level, f"{key}: attempt manifest securityLevel mismatch")
+                    _issue(
+                        issues,
+                        attempt_manifest.get("permittedValidationClasses") == permitted_validation_classes(level),
+                        f"{key}: attempt manifest validation classes do not match security level",
+                    )
+                    assigned_angles = set(attempt_manifest.get("assignedScope", {}).get("angles", []))
+                    if level == "off":
+                        _issue(issues, 5 not in assigned_angles, f"{key}: angle 5 assigned at security level off")
         for requirement in requirements:
             completion = completed.get(requirement.get("id"))
             if unit.get("status") == "complete":
@@ -187,7 +240,7 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
                 if completion.get("stale") is True:
                     issues.append(f"{uid}: completed second review invalidated by later intersecting primary import")
         if unit.get("status") == "complete":
-            _issue(issues, all(angle.get("status") in {"reviewed", "not_applicable"} for angle in angles.values()), f"{uid}: complete status contradicts angle lifecycle")
+            _issue(issues, all(angle.get("status") in {"reviewed", "not_applicable", "excluded_by_profile"} for angle in angles.values()), f"{uid}: complete status contradicts angle lifecycle")
         history = unit.get("manifestHistory", [])
         if history:
             _issue(issues, history[-1].get("path") == unit.get("currentManifest"), f"{uid}: stale superseded manifest is authoritative")
@@ -197,6 +250,17 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
                     issues.append(f"{uid}: manifest missing: {entry.get('path')}")
                 elif entry.get("hash") and digest_bytes(manifest_path.read_bytes()) != entry.get("hash"):
                     issues.append(f"{uid}: manifest identity mismatch: {entry.get('path')}")
+                elif declared_profile and entry.get("path") == unit.get("currentManifest"):
+                    manifest = load_json(manifest_path)
+                    _issue(issues, manifest.get("securityLevel") == level, f"{uid}: unit manifest securityLevel mismatch")
+                    _issue(
+                        issues,
+                        manifest.get("permittedValidationClasses") == permitted_validation_classes(level),
+                        f"{uid}: unit manifest validation classes do not match security level",
+                    )
+                    required_angles = set(manifest.get("requiredAngleDispositions", []))
+                    expected_angles = set(range(1, 11)) - ({5} if level == "off" else set())
+                    _issue(issues, required_angles == expected_angles, f"{uid}: unit manifest angles do not match security level")
 
     for path, row in current_paths.items():
         count = assignments[path]
@@ -204,6 +268,11 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
             _issue(issues, count == 1, f"path primary assignment count is {count}, expected 1: {path}")
         else:
             _issue(issues, count == 0, f"excluded path assigned to primary unit: {path}")
+            exclusion = row.get("exclusion", {})
+            if exclusion.get("category") == "security_profile":
+                _issue(issues, level == "off", f"security-profile path exclusion requires security level off: {path}")
+                _issue(issues, exclusion.get("authorizedBy") == "securityProfile:off", f"security-profile path exclusion has invalid authority: {path}")
+                _issue(issues, bool(exclusion.get("rationale")) and bool(exclusion.get("boundaryEvidence")), f"security-profile path exclusion lacks evidence: {path}")
     for path in assignments:
         _issue(issues, path in current_paths, f"work unit references unknown baseline path: {path}")
 
@@ -223,7 +292,20 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
             _issue(issues, observation.get("duplicateOf") in canonical_targets, f"{observation.get('id')}: invalid duplicate mapping")
         if disposition == "withdrawn":
             _issue(issues, bool(observation.get("findingId") and observation.get("withdrawal")), f"{observation.get('id')}: invalid withdrawal mapping")
+        if disposition == "deferred_by_profile":
+            deferral = observation.get("profileDeferral", {})
+            valid_deferral = (
+                level == "off"
+                and observation.get("category") == "security"
+                and deferral.get("securityLevel") == "off"
+                and bool(deferral.get("reason"))
+            )
+            _issue(issues, valid_deferral, f"{observation.get('id')}: invalid profile deferral")
     for validation in validations:
+        validation_class = validation.get("validationClass")
+        if declared_profile:
+            _issue(issues, validation.get("securityLevel") == level, f"{validation.get('id')}: validation securityLevel mismatch")
+            _issue(issues, validation_class_allowed(level, str(validation_class)), f"{validation.get('id')}: validation class is not permitted at security level {level}")
         for ref in validation.get("observationIds", []):
             _issue(issues, ref in observation_set, f"{validation.get('id')}: orphaned observation reference {ref}")
     for objection in objections:
@@ -255,6 +337,11 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
             "baselinePaths": len(current_paths),
             "inScopePaths": sum(row.get("exclusion") is None for row in current_paths.values()),
             "excludedPaths": sum(row.get("exclusion") is not None for row in current_paths.values()),
+            "securityProfileExcludedPaths": sum(
+                row.get("exclusion", {}).get("category") == "security_profile"
+                for row in current_paths.values()
+                if isinstance(row.get("exclusion"), dict)
+            ),
             "workUnits": len(units),
             "observations": len(observations),
             "validations": len(validations),
