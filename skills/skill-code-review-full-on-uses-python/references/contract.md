@@ -66,6 +66,13 @@ targets, production services, use of real credentials or secret material,
 destructive action, persistence, unrestricted network scanning, and
 external-service mutation.
 
+For profile-permitted defensive work, apply the Reference Pack defensive
+assurance taxonomy. Describe the component, expected invariant, authorized
+evidence, permitted validation, and prohibited actions instead of relying on a
+broad category label. Keep the canonical security level and validation class
+explicit. The taxonomy improves precision; it never changes the purpose,
+classification, authority, or limits of an assignment.
+
 Treat a missing profile in a run created before this feature as legacy `high`
 to preserve its original scope. The level is immutable within one run. A
 different requested level requires a fresh run; never silently widen or narrow
@@ -210,6 +217,14 @@ reference extracts, security level, permitted validation classes, constraints,
 output schema, and the mandatory specialist block. Exclude the full governing
 documents, unrelated findings, other ledgers, conversation history, and
 orchestration mechanics.
+
+When Angle 5 is assigned, include the defensive-assurance extract and express
+the assignment as concrete application invariants. Do not maintain a
+prohibited-word list, hide the defensive purpose, omit the canonical profile,
+or relabel validation. If a worker reports a policy refusal, preserve its
+partial evidence and exact remaining scope; do not rephrase and resubmit the
+same work to evade the refusal. Continue only with independently permitted
+work.
 
 Read imported ledgers and results fully, challenge optimistic completion,
 validate identities, and schedule without starving tests, SDKs, platforms,

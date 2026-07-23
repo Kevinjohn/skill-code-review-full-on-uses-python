@@ -2,7 +2,7 @@
 
 An open Agent Skills-format workflow for exhaustive, evidence-backed review of an entire repository.
 
-> **Current release:** 0.1.2. The canonical Skill, portable Python state
+> **Current release:** 0.1.3. The canonical Skill, portable Python state
 > utility, tests, and CI are included; product-specific Plugin packaging is
 > intentionally deferred.
 
@@ -293,6 +293,13 @@ Omit `--security-level` to create an `off` run.
 | `low` | Passive review of security-sensitive code | None | None |
 | `medium` | Same as `low` | Repository-authorized local static checks, such as SAST, CodeQL security queries, dependency vulnerability audits, secret scanning, and static cryptography/TLS/configuration checks | None |
 | `high` | Same as `medium` | Same as `medium` | Non-destructive validation against isolated local fixtures and ephemeral, review-owned services |
+
+At `low` and above, worker assignments use the
+[behaviour-based defensive assurance taxonomy](skills/skill-code-review-full-on-uses-python/references/reference-pack.md#r3b-defensive-assurance-taxonomy).
+They describe the component, expected invariants, authorized evidence,
+permitted validation, and prohibited actions instead of relying on a broad
+category label. The taxonomy does not hide purpose or change the persisted
+level and validation class, and refused work is never reworded and resubmitted.
 
 At `off`, the workflow does not create security-specific workers, perform
 threat modelling, run security scans, construct adversarial tests, or attempt

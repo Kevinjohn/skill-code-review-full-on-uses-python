@@ -68,6 +68,8 @@ class SkillValidationTests(unittest.TestCase):
             self.assertIn(f"`{level}`", self.text)
         self.assertIn("`off` (default)", self.text)
         self.assertIn("--security-level <off|low|medium|high>", self.text)
+        self.assertIn("defensive-assurance.md", self.text)
+        self.assertIn("Do not build a prohibited-word list", self.text)
 
 
 if __name__ == "__main__":

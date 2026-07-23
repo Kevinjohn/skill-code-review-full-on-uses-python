@@ -9,6 +9,11 @@ off | low | medium | high
 New reviews default to `off`. Security work is therefore opt-in rather than an
 automatic consequence of running a full repository review.
 
+Version 0.1.3 adds a behaviour-based defensive assurance taxonomy for
+profile-permitted worker assignments. It makes the intended application
+invariants and operating boundaries more precise without changing the selected
+level or concealing the purpose of the work.
+
 ## Why security review is controlled separately
 
 An exhaustive code review and a security assessment are related, but they are
@@ -166,6 +171,47 @@ command or tool name.
 A generic command does not make an activity ordinary. For example, using a
 normal test runner to probe authorization bypasses is still active security
 validation.
+
+## Behaviour-based defensive assurance
+
+For `low`, `medium`, and `high`, worker assignments describe the concrete
+application invariants being checked rather than relying on broad category
+labels. This keeps the assignment precise about the component, expected
+behaviour, evidence, validation boundary, and prohibited actions.
+
+The canonical list is the
+[defensive assurance taxonomy](skills/skill-code-review-full-on-uses-python/references/reference-pack.md#r3b-defensive-assurance-taxonomy).
+It covers identity continuity, operation permissions, account separation,
+statement/data separation, process arguments, rendered content, filesystem
+containment, outbound destinations, request provenance, parser bounds,
+sensitive values, protected channels, randomness, sessions, repeated
+operations, imports and extensions, dependency provenance, audit records,
+administrative operations, transactions, configuration, and information
+exposure.
+
+Example worker titles include:
+
+- `Persistence layer — statement/data separation and account ownership`
+- `Sign-in flows — identity and session lifecycle correctness`
+- `Import pipeline — parser bounds and filesystem root containment`
+- `Outbound clients — destination control and sensitive-value lifecycle`
+- `Administrative operations — role, approval, transaction, and audit invariants`
+
+Every such assignment states:
+
+```text
+Defensive assurance purpose: <component and behaviour>
+Expected invariants: <specific properties that must remain true>
+Authorized evidence: <source, configuration, documentation, and permitted tests>
+Permitted validation: <exact inherited validation classes and local scope>
+Prohibited actions: <profile limits plus repository-specific exclusions>
+```
+
+This is a clarity mechanism, not a euphemism or prohibited-word system. The
+stored security level, validation class, purpose, authority, and limits remain
+explicit. The workflow must not conceal intent, change classification, or
+rephrase and resubmit refused work. Canonical terminology remains appropriate
+when repository language or reporting accuracy requires it.
 
 ## How the boundary is enforced
 

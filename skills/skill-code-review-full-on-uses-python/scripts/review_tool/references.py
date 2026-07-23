@@ -70,8 +70,15 @@ def extract_reference(source: bytes) -> list[Extract]:
         match.group(2).decode("utf-8").strip()
         for match in HEADING.finditer(source)
     }
+    profile_index = 6
     if "R3A. Security levels" in headings:
-        definitions.insert(6, ("security-levels.md", "R3A. Security levels"))
+        definitions.insert(profile_index, ("security-levels.md", "R3A. Security levels"))
+        profile_index += 1
+    if "R3B. Defensive assurance taxonomy" in headings:
+        definitions.insert(
+            profile_index,
+            ("defensive-assurance.md", "R3B. Defensive assurance taxonomy"),
+        )
     extracts: list[Extract] = []
     for filename, title in definitions:
         start, end = heading_range(source, title)

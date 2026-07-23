@@ -33,6 +33,12 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len([name for name in extracts if name.startswith("angle-") and name != "angle-index.md"]), 10)
         self.assertTrue(extracts["angle-01.md"].data.startswith(b"### Angle 1"))
         self.assertTrue(extracts["security-levels.md"].data.startswith(b"## R3A. Security levels"))
+        self.assertTrue(
+            extracts["defensive-assurance.md"].data.startswith(
+                b"## R3B. Defensive assurance taxonomy"
+            )
+        )
+        self.assertIn(b"Statement and data separation", extracts["defensive-assurance.md"].data)
         start, end = mandatory_block(source)
         self.assertTrue(source[start:end].startswith(b"> Review the entire assigned manifest."))
         self.assertNotIn(b"BEGIN MANDATORY", source[start:end])
@@ -41,6 +47,7 @@ class CoreTests(unittest.TestCase):
         legacy_source = source[:security_start] + source[security_end:]
         legacy_extracts = {item.filename for item in extract_reference(legacy_source)}
         self.assertNotIn("security-levels.md", legacy_extracts)
+        self.assertNotIn("defensive-assurance.md", legacy_extracts)
 
     def test_path_normalization_and_containment(self):
         self.assertEqual(normalize_relative("a/b.json"), "a/b.json")

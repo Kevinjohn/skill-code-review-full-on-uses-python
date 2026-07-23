@@ -49,9 +49,10 @@ Resolve exactly one level before architecture mapping or worker creation:
 Accept `--security-level off|low|medium|high` or an equivalent explicit
 natural-language request. Do not ask when omitted; use `off`. Never infer or
 increase the level from repository contents, available tools, model capability,
-or worker output. Read the Reference Pack security-level extract before
-constructing paths, units, manifests, or packets when it exists. A legacy
-snapshot without that extract keeps its compatibility level of `high`.
+or worker output. Read the Reference Pack security-level and defensive-assurance
+extracts before constructing paths, units, manifests, or packets when they
+exist. A legacy snapshot without the security-level extract keeps its
+compatibility level of `high`.
 
 ## Start or resume safely
 
@@ -92,6 +93,15 @@ the inherited security level and permitted validation classes, relevant
 extracted references, output schemas, and the mandatory specialist block.
 Never send the full contract, complete Reference Pack, conversation history,
 or unrelated findings.
+
+At `low`, `medium`, or `high`, describe defensive work as concrete component
+invariants using `defensive-assurance.md`. Prefer titles such as
+`Persistence layer — statement/data separation and account ownership` over a
+broad category label. State expected invariants, authorized evidence, permitted
+validation, and prohibited actions. Preserve the exact security level and
+validation class; the taxonomy clarifies purpose and never changes
+classification. Do not build a prohibited-word list, conceal intent, or
+rephrase and retry work after a policy refusal.
 
 Persist partial evidence from interrupted attempts and reassign the exact
 remaining paths, symbols, angles, and validations. An interruption is never an

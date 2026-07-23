@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.3 — 2026-07-23
+
+### Added
+
+- Added a behaviour-based defensive assurance taxonomy for precise worker
+  scopes covering application invariants, authorized evidence, validation
+  limits, and prohibited actions.
+
+### Changed
+
+- Defensive worker assignments now prefer component-and-invariant descriptions
+  while preserving the canonical security level and validation class.
+- Policy refusals must be recorded and must not be reworded and resubmitted.
+
 ## 0.1.2 — 2026-07-23
 
 ### Added

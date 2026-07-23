@@ -367,6 +367,70 @@ boundary. Do not substantively inspect it for security properties. The final
 auditor verifies the exclusion record, non-assignment, and boundary evidence;
 it does not reopen the excluded security review.
 
+## R3B. Defensive assurance taxonomy
+
+Use this taxonomy when the selected profile permits Angle 5. Describe the
+specific application behavior that must remain true. Prefer a
+`component — invariant` title over a broad category label, then state the
+expected invariant, authorized evidence, permitted validation, and prohibited
+actions.
+
+This taxonomy is for precise defensive communication. It is not a prohibited-
+word list or a translation scheme for policy evasion. Keep `securityLevel`,
+`permittedValidationClasses`, purpose, authority, and limits explicit. Do not
+use different wording to change an activity's classification or to retry work
+after a policy refusal.
+
+| Assurance focus | Invariant to inspect |
+|---|---|
+| Actor identity continuity | Each protected operation acts for the identity established by the intended sign-in, session, renewal, recovery, and sign-out lifecycle. |
+| Operation permission invariants | Every operation checks the expected role, ownership, state, and resource boundary before any externally visible effect. |
+| Account and tenant separation | Reads, writes, caches, jobs, exports, and administrative paths remain scoped to the intended account or tenant. |
+| Statement and data separation | Values originating outside the statement builder remain bound data and cannot alter database statement structure. |
+| Process argument separation | External values remain distinct from executable names, shell syntax, flags, and process-control structure. |
+| Rendered content separation | Untrusted display values remain content and cannot alter document structure, executable behavior, or navigation policy. |
+| Filesystem root containment | User-influenced names, links, archives, and canonicalized paths remain within the intended application-owned roots. |
+| Outbound destination control | Application-initiated requests reach only intended schemes, hosts, ports, redirects, and address ranges. |
+| Request provenance and replay resistance | State-changing browser and API operations require the intended origin, session context, freshness, and one-time proofs where applicable. |
+| Parser and decoder bounds | Parsers reject unsupported structures, external references, excessive nesting or size, ambiguous encodings, and unsafe object construction. |
+| Sensitive-value lifecycle | Credentials, tokens, recovery material, and private values are minimally collected, narrowly exposed, safely stored, rotated, revoked, and excluded from logs. |
+| Protected-channel and peer identity | Connection setup verifies the intended peer and transport properties without unsafe fallback. |
+| Key, nonce, and randomness lifecycle | Maintained platform primitives receive suitable keys, uniqueness inputs, entropy, rotation, and failure handling. |
+| Session and recovery lifecycle | Session creation, renewal, invalidation, recovery, reauthentication, and multi-step identity checks preserve the intended account guarantees. |
+| Repeated-operation containment | Expensive or sensitive operations have appropriate frequency, concurrency, size, and resource-consumption limits. |
+| Import, extension, and plugin boundaries | Imported data and executable extensions cross explicit format, capability, origin, and lifecycle boundaries before activation. |
+| Dependency and build provenance | Declared packages, generated inputs, release artifacts, and build steps come from intended sources with reproducible integrity checks. |
+| Audit record integrity | Material identity, permission, administrative, and state-changing events produce complete, ordered, attributable, and tamper-evident records. |
+| Administrative-operation guards | Destructive or high-impact operations require the intended role, confirmation, scope, transaction behavior, and recovery path. |
+| Transaction and approval integrity | Multi-step approvals and state transitions cannot be reordered, replayed, partially committed, or completed by an unintended actor. |
+| Configuration fail-safe behavior | Missing, malformed, development, or contradictory settings fail safely and cannot silently weaken production boundaries. |
+| Information exposure control | Responses, diagnostics, metrics, traces, logs, exports, and caches reveal no more internal or private detail than their audience requires. |
+
+Construct worker scopes from the applicable rows. Examples:
+
+- `Persistence layer — statement/data separation and account ownership`
+- `Sign-in flows — identity and session lifecycle correctness`
+- `Import pipeline — parser bounds and filesystem root containment`
+- `Outbound clients — destination control and sensitive-value lifecycle`
+- `Administrative operations — role, approval, transaction, and audit invariants`
+
+Use this assignment shape:
+
+```text
+Defensive assurance purpose: <component and behavior>
+Expected invariants: <specific properties that must remain true>
+Authorized evidence: <source, configuration, documentation, and permitted tests>
+Permitted validation: <exact inherited validation classes and local scope>
+Prohibited actions: <profile limits plus repository-specific exclusions>
+```
+
+At `low`, inspect source, configuration, existing tests, and documentation
+without constructing targeted executions. At `medium`, add only
+repository-authorized local static checks. At `high`, add only non-destructive
+checks against isolated, review-owned local fixtures. Canonical terminology may
+still be used when repository language or reporting accuracy requires it; do
+not trade clarity for synonym substitution.
+
 ## R4. Mandatory specialist block
 
 <!-- BEGIN MANDATORY SPECIALIST BLOCK -->
@@ -381,9 +445,10 @@ it does not reopen the excluded security review.
 > validation instead of silently dropping them. Do not assume another reviewer
 > will report an overlap. Use attempt-local candidate and validation identifiers
 > only; permanent identifiers are assigned at import. Preserve the supplied
-> reviewer execution identity and security level exactly. Obey the security
-> level and validation-class limits in the assignment; never expand or escalate
-> them. Before returning, enumerate inspected and uninspected paths and
+> reviewer execution identity, declared profile, and validation-class limits
+> exactly; never expand or escalate them. For assigned defensive work, organize
+> evidence around the supplied component invariants and preserve its purpose
+> honestly. Before returning, enumerate inspected and uninspected paths and
 > symbols, completed and pending angles, validations,
 > observations, and residual uncertainty. Mark the result `complete`, `partial`,
 > or `blocked`; partial or blocked results identify exact remaining scope.
@@ -596,6 +661,7 @@ specialist-validation-schema.md
 final-auditor-result-schema.md
 risk-tiers.md
 security-levels.md
+defensive-assurance.md
 mandatory-specialist-block.md
 cross-component.md
 finding-format.md
