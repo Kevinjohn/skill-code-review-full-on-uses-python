@@ -2,7 +2,7 @@
 
 An open Agent Skills-format workflow for exhaustive, evidence-backed review of an entire repository.
 
-> **Current release:** 0.2.0. The canonical Skill, portable Python state
+> **Current release:** 0.4.0. The canonical Skill, portable Python state
 > utility, tests, and CI are included; product-specific Plugin packaging is
 > intentionally deferred.
 
@@ -21,7 +21,7 @@ Security review defaults to `off`. Callers can select `low` passive review,
 review-owned environments. Every level prohibits external targets and
 production services.
 
-The core Skill follows the open Agent Skills directory format. Its `contract.md` and `reference-pack.md` are editable and forkable: they are snapshotted for each review specification epoch, but they are not cryptographically pinned or coupled to a digest manifest. Runtime identities remain where they protect the repository baseline, canonical state, transactions, attempts, validations, deterministic audit sampling, and generated reports.
+The core Skill follows the open Agent Skills directory format. Its `contract.md` and `reference-pack.md` are editable and forkable. Each review snapshots them at initialization and pins the preserved source and derived extracts inside that run; editing the documents mid-review is not supported — start a new review instead. Runtime identities also protect the repository baseline, canonical state, transactions, attempts, validations, and generated reports.
 
 ## How the review works
 
@@ -320,8 +320,8 @@ declared class exceeds the profile. Validation must be classified by purpose
 and effect; security work cannot be relabelled as ordinary validation to bypass
 the profile. Changing the level requires a fresh run, and it is never escalated
 automatically because of repository contents, available tools, worker output,
-or model capability. Legacy runs created before profiles existed retain their
-original `high` behavior so their scope does not silently change during resume.
+or model capability. Runs without the current review-specification and security
+profile declarations fail closed with a re-initialization diagnostic.
 
 Ordinary pull-request, diff-only, quick, severity-limited, and narrow reviews should use a smaller review workflow.
 

@@ -28,15 +28,43 @@ class IntegrationTests(unittest.TestCase):
             subprocess.run(["git", "-C", repository, "add", "example.py"], check=True)
             review = repository / "code-reviews/fixture"
             self.run_tool("init", "--review-dir", str(review), "--contract", str(CONTRACT), "--reference-pack", str(PACK), "--security-level", "high")
+            review_spec_version = load_json(review / "run.json")["reviewSpecVersion"]
 
             path_row = {"path": "example.py", "revisionEpoch": "EPOCH-0001", "entryKind": "file", "baselineState": "staged", "contentId": "blob-1", "sizeBytes": 10, "implementationLines": 1, "language": "python", "subsystem": "core", "classification": "production", "exclusion": None}
             content_set = canonical_identity([path_row])
+            capsule = {
+                "capsuleId": "CAPSULE-CORE-0001",
+                "baselineContentSetHash": content_set,
+                "specEpoch": "SPEC-0001",
+                "subsystem": "core",
+                "role": "Miniature fixture",
+                "entryPoints": ["example.py"],
+                "publicBoundaries": [],
+                "dependencySeams": [],
+                "importantCallersCallees": [],
+                "tests": [],
+                "documentation": [],
+                "configuration": [],
+                "commands": [],
+                "sharedInvariants": ["The fixture remains readable."],
+                "failureBoundaries": [],
+                "evidenceLocations": ["example.py:1"],
+                "architectureHash": digest_bytes((review / "architecture.md").read_bytes()),
+                "referenceManifestHash": digest_bytes(
+                    (review / "tooling/reference/manifest.json").read_bytes()
+                ),
+            }
+            capsule_hash = digest_bytes(canonical_bytes(capsule))
             unit_manifest = {
                 "workId": "WORK-0001", "revision": 1, "supersedes": None, "reason": "initial",
-                "revisionEpoch": "EPOCH-0001", "reviewSpecVersion": 1, "specEpoch": "SPEC-0001", "riskTier": "B", "securityLevel": "high",
+                "revisionEpoch": "EPOCH-0001", "reviewSpecVersion": review_spec_version, "specEpoch": "SPEC-0001", "riskTier": "B", "securityLevel": "high",
                 "contentSetHash": content_set, "paths": [{"path": "example.py", "contentId": "blob-1"}],
                 "sizeTotals": {"productionFiles": 1, "implementationLines": 1}, "limitException": None,
-                "symbols": [], "entryPoints": [], "boundaries": [], "knownInvariants": [],
+                "symbols": [], "subsystem": "core",
+                "orientationCapsule": {
+                    "path": "assignments/capsules/core.json",
+                    "hash": capsule_hash,
+                },
                 "requiredAngleDispositions": list(range(1, 11)), "requiredSecondReviews": [],
                 "repositoryInstructions": [], "permittedValidationScope": [],
                 "permittedValidationClasses": ["ordinary", "security_static", "security_dynamic_isolated"],
@@ -48,7 +76,9 @@ class IntegrationTests(unittest.TestCase):
             attempt_manifest = {
                 "workId": "WORK-0001", "attemptId": "ATTEMPT-0001",
                 "unitManifest": "assignments/WORK-0001/MANIFEST-0001.json", "unitManifestHash": unit_hash,
-                "packetType": "primary_semantic", "reviewerExecutionId": "EXEC-001", "reviewSpecVersion": 1,
+                "packetType": "primary_semantic", "reviewerExecutionId": "EXEC-001",
+                "reviewerPrincipalId": "PRINCIPAL-001", "reviewerReuseMode": "cold", "reviewerBatchId": None,
+                "reviewSpecVersion": review_spec_version,
                 "securityLevel": "high",
                 "specEpoch": "SPEC-0001", "assignedScope": {"paths": ["example.py"], "symbols": [], "angles": list(range(1, 11))},
                 "secondReviewRequirementId": None, "independentFromAttemptIds": [], "primaryEvidenceSetHash": None,
@@ -64,16 +94,23 @@ class IntegrationTests(unittest.TestCase):
             unit = {
                 "id": "WORK-0001", "revisionEpoch": "EPOCH-0001", "specEpoch": "SPEC-0001",
                 "currentManifest": "assignments/WORK-0001/MANIFEST-0001.json", "currentManifestHash": unit_hash,
-                "manifestHistory": [{"revision": 1, "path": "assignments/WORK-0001/MANIFEST-0001.json", "hash": unit_hash}],
+                "manifestHistory": [{
+                    "revision": 1,
+                    "path": "assignments/WORK-0001/MANIFEST-0001.json",
+                    "hash": unit_hash,
+                    "supersedes": None,
+                    "preservedAttemptManifestHashes": [],
+                }],
                 "contentSetHash": content_set, "paths": ["example.py"], "title": "miniature module", "subsystem": "core",
                 "riskTier": "B", "securityLevel": "high", "criticalReasons": [], "status": "assigned",
-                "reviewAttempts": [{"attemptId": "ATTEMPT-0001", "manifest": "assignments/WORK-0001/ATTEMPT-0001.json", "manifestHash": attempt_hash, "unitManifestHash": unit_hash, "packetType": "primary_semantic", "reviewerExecutionId": "EXEC-001", "independentFromAttemptIds": [], "status": "assigned", "resultHash": None, "importDisposition": "pending"}],
+                "reviewAttempts": [{"attemptId": "ATTEMPT-0001", "manifest": "assignments/WORK-0001/ATTEMPT-0001.json", "manifestHash": attempt_hash, "unitManifestHash": unit_hash, "packetType": "primary_semantic", "reviewerExecutionId": "EXEC-001", "reviewerPrincipalId": "PRINCIPAL-001", "independentFromAttemptIds": [], "status": "assigned", "resultHash": None, "attemptEvidenceHash": None, "importDisposition": "pending"}],
                 "angles": angles, "requiredSecondReviews": [], "completedSecondReviews": [], "residualUncertainty": [], "updatedAt": "2026-01-01T00:00:00Z",
             }
             changes = {
                 "run.json": run, "paths.jsonl": [path_row], "work-units.jsonl": [unit],
                 "assignments/WORK-0001/MANIFEST-0001.json": unit_manifest,
                 "assignments/WORK-0001/ATTEMPT-0001.json": attempt_manifest,
+                "assignments/capsules/core.json": capsule,
             }
             changes_path = base / "changes.json"
             changes_path.write_text(json.dumps(changes))
@@ -84,6 +121,7 @@ class IntegrationTests(unittest.TestCase):
             evidence = [{"scopeCovered": {"kind": "whole_unit"}, "locations": ["example.py:1"], "claim": "The constant assignment has no stateful behavior in this fixture."}]
             result = {
                 "workId": "WORK-0001", "attemptId": "ATTEMPT-0001", "reviewerExecutionId": "EXEC-001",
+                "reviewerPrincipalId": "PRINCIPAL-001",
                 "packetType": "primary_semantic", "unitManifestHash": unit_hash, "attemptManifestHash": attempt_hash,
                 "specEpoch": "SPEC-0001", "securityLevel": "high", "status": "complete", "inspected": {"paths": ["example.py"], "symbols": []},
                 "notInspected": {"paths": [], "symbols": []},
@@ -92,9 +130,12 @@ class IntegrationTests(unittest.TestCase):
                 "candidates": [{
                     "localId": "CAND-A1-001", "title": "Fixture question", "category": "question",
                     "primaryLocation": {"path": "example.py", "startLine": 1, "endLine": 1},
+                    "additionalLocations": [],
                     "proposedDisposition": "unresolved", "proposedMateriality": "non_material",
                     "proposedMaterialityRationale": "The fixture is informational.",
-                    "confidence": "Low", "affectedConfigurations": ["fixture"], "evidence": ["fixture"],
+                    "confidence": "Low", "affectedComponents": [], "affectedConfigurations": ["fixture"],
+                    "affectedDeployments": [], "trigger": "", "expected": "", "actual": "",
+                    "impact": "", "evidence": ["fixture"],
                     "likelihood": "unlikely", "blastRadius": "fixture only", "reachability": "direct",
                     "existingChecks": "none", "reproduction": "read the constant",
                     "recommendation": "answer the question", "regressionTest": "retain the fixture",
@@ -129,8 +170,8 @@ class IntegrationTests(unittest.TestCase):
             base = Path(temporary)
             process = self.run_tool("init", "--review-dir", str(base / "review"), "--contract", str(CONTRACT), "--reference-pack", str(PACK), "--unknown", expected=2)
             self.assertIn("unrecognized arguments", process.stderr)
-            process = self.run_tool("check", "--review-dir", temporary, expected=2)
-            self.assertIn("missing JSON", process.stderr)
+            process = self.run_tool("check", "--review-dir", temporary, expected=1)
+            self.assertIn("missing JSON", process.stdout)
             process = self.run_tool("init", "--review-dir", str(base / "invalid"), "--contract", str(CONTRACT), "--reference-pack", str(PACK), "--security-level", "extreme", expected=2)
             self.assertIn("invalid choice", process.stderr)
 

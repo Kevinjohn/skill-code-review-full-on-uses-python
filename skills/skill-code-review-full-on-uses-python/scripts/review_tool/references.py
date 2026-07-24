@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from .errors import ReviewToolError
+from .io import digest_bytes, parse_json_bytes, safe_child
 
 
 @dataclass(frozen=True)
@@ -60,25 +62,14 @@ def extract_reference(source: bytes) -> list[Extract]:
         ("specialist-validation-schema.md", "Specialist `validations.jsonl` (attempt-local)"),
         ("final-auditor-result-schema.md", "Final-auditor `result.json` (attempt-local)"),
         ("risk-tiers.md", "R3. Risk tiers"),
+        ("security-levels.md", "R3A. Security levels"),
+        ("defensive-assurance.md", "R3B. Defensive assurance taxonomy"),
         ("cross-component.md", "R5. Phase 4 cross-component checklist"),
         ("finding-format.md", "R6. Validated finding format"),
         ("severity-confidence.md", "R7. Severity and confidence ladders"),
         ("handoff.md", "R8. Handoff contents"),
         ("installation.md", "R10. Deterministic extraction"),
     ]
-    headings = {
-        match.group(2).decode("utf-8").strip()
-        for match in HEADING.finditer(source)
-    }
-    profile_index = 6
-    if "R3A. Security levels" in headings:
-        definitions.insert(profile_index, ("security-levels.md", "R3A. Security levels"))
-        profile_index += 1
-    if "R3B. Defensive assurance taxonomy" in headings:
-        definitions.insert(
-            profile_index,
-            ("defensive-assurance.md", "R3B. Defensive assurance taxonomy"),
-        )
     extracts: list[Extract] = []
     for filename, title in definitions:
         start, end = heading_range(source, title)
@@ -101,3 +92,67 @@ def extract_reference(source: bytes) -> list[Extract]:
     start, end = mandatory_block(source)
     extracts.append(Extract("mandatory-specialist-block.md", "mandatory specialist block", start, end, source[start:end]))
     return extracts
+
+
+def verified_reference_bytes(root: Path, filenames: list[str]) -> dict[str, bytes]:
+    """Load installed extracts only after matching them to the preserved source."""
+    manifest_path = root / "tooling/reference/manifest.json"
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+    except OSError as exc:
+        raise ReviewToolError(
+            f"reference installation manifest is unreadable: {manifest_path}"
+        ) from exc
+    manifest = parse_json_bytes(manifest_bytes, str(manifest_path))
+    if not isinstance(manifest, dict):
+        raise ReviewToolError("reference installation manifest must be an object")
+    pack_entry = next(
+        (
+            item
+            for item in manifest.get("sources", [])
+            if isinstance(item, dict)
+            and str(item.get("path", "")).endswith("reference-pack.md")
+        ),
+        None,
+    )
+    if pack_entry is None:
+        raise ReviewToolError("preserved reference pack source is not recorded")
+    reference_root = root / "tooling/reference"
+    source_path = safe_child(reference_root, str(pack_entry["path"]))
+    try:
+        source = source_path.read_bytes()
+    except OSError as exc:
+        raise ReviewToolError(
+            f"preserved reference pack source is unreadable: {source_path}"
+        ) from exc
+    if (
+        not isinstance(pack_entry.get("sha256"), str)
+        or digest_bytes(source) != pack_entry.get("sha256")
+    ):
+        raise ReviewToolError("preserved reference pack source identity mismatch")
+    extracted = {item.filename: item for item in extract_reference(source)}
+    entries = {
+        item.get("path"): item
+        for item in manifest.get("derived", [])
+        if isinstance(item, dict)
+    }
+    result: dict[str, bytes] = {}
+    for filename in filenames:
+        expected = extracted.get(filename)
+        entry = entries.get(filename)
+        if expected is None or entry is None:
+            raise ReviewToolError(f"reference extraction is not recorded: {filename}")
+        path = safe_child(reference_root, filename)
+        try:
+            installed = path.read_bytes()
+        except OSError as exc:
+            raise ReviewToolError(f"reference extraction is unreadable: {filename}") from exc
+        if (
+            installed != expected.data
+            or entry.get("sourceByteStart") != expected.start
+            or entry.get("sourceByteEnd") != expected.end
+            or entry.get("sha256") != digest_bytes(installed)
+        ):
+            raise ReviewToolError(f"reference extraction changed: {filename}")
+        result[filename] = installed
+    return result

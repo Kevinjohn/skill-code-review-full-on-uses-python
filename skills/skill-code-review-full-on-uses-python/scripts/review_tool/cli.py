@@ -10,8 +10,9 @@ from pathlib import Path
 from . import __version__
 from .checks import check_review
 from .errors import ReviewToolError
-from .io import ensure_review_root, state_digest
+from .io import ensure_review_root
 from .operations import apply_mutation, audit, generate, import_audit, import_specialist, initialize
+from .packets import check_attempt_result, initialize_attempt_result, write_packet
 from .security import SECURITY_LEVELS
 from .transactions import recover
 
@@ -36,21 +37,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Security review depth; defaults to off for a new review",
     )
+    init.add_argument(
+        "--stable-reviewer-lineage",
+        action="store_true",
+        default=None,
+        help="Declare that the harness preserves a stable reviewer principal across warm assignments",
+    )
 
     check = sub.add_parser("check", help="Validate canonical state and integrity invariants")
     _review_dir(check)
     check.add_argument("--skip-generated", action="store_true", help="Do not require generated views to be current")
     check.add_argument("--json", action="store_true", help="Emit machine-readable output")
 
-    mutate = sub.add_parser("mutate", help="Commit an atomic canonical state replacement or specification migration")
+    mutate = sub.add_parser("mutate", help="Commit an atomic canonical state replacement")
     _review_dir(mutate)
     mutate.add_argument("--expected-digest", required=True)
     mutate.add_argument("--changes", type=Path, help="JSON object mapping canonical paths to complete replacement values")
-    mutate.add_argument("--migrate-spec", action="store_true", help="Start a new specification epoch")
-    mutate.add_argument("--contract", type=Path)
-    mutate.add_argument("--reference-pack", type=Path)
-    mutate.add_argument("--changed-section", action="append", default=[])
-    mutate.add_argument("--affected-angle", type=int, choices=range(1, 11), action="append", default=[])
 
     specialist = sub.add_parser("import", help="Atomically import one specialist attempt")
     _review_dir(specialist)
@@ -70,6 +72,19 @@ def build_parser() -> argparse.ArgumentParser:
     _review_dir(audit_parser)
     audit_parser.add_argument("--mode", choices=("checkpoint", "completion", "incomplete-handoff"), required=True)
     audit_parser.add_argument("--json", action="store_true", help="Emit machine-readable output only")
+
+    for name, help_text in (
+        ("packet", "Generate one deterministic specialist packet"),
+        ("attempt-init", "Create a specialist result skeleton from its immutable manifest"),
+        ("attempt-check", "Validate one attempt-local result before import"),
+    ):
+        command = sub.add_parser(name, help=help_text)
+        _review_dir(command)
+        command.add_argument("--work-id", required=True)
+        command.add_argument("--attempt-id", required=True)
+        if name == "attempt-check":
+            command.add_argument("--json", action="store_true", help="Emit machine-readable output")
+
     return parser
 
 
@@ -81,6 +96,8 @@ def _print_result(result: dict, *, json_only: bool = False) -> None:
         print("check: PASS" if result["ok"] else "check: FAIL")
         for issue in result.get("issues", []):
             print(f"- {issue}")
+        for warning in result.get("warnings", []):
+            print(f"- warning: {warning}")
     elif "passed" in result:
         print(f"{result['mode']} audit: {'PASS' if result['passed'] else 'FAIL'}")
         for issue in result.get("issues", []):
@@ -102,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.runtime_capability,
                 security_level=args.security_level or "off",
                 security_source="user" if args.security_level else "default",
+                stable_reviewer_lineage=args.stable_reviewer_lineage,
             )
         else:
             root = ensure_review_root(args.review_dir)
@@ -112,12 +130,7 @@ def main(argv: list[str] | None = None) -> int:
                 _print_result(result, json_only=args.json)
                 return 0 if result["ok"] else 1
             if args.command == "mutate":
-                migration = None
-                if args.migrate_spec:
-                    if not args.contract or not args.reference_pack:
-                        raise ReviewToolError("--migrate-spec requires --contract and --reference-pack")
-                    migration = (args.contract, args.reference_pack, args.changed_section, args.affected_angle)
-                result = apply_mutation(root, args.expected_digest, args.changes, migration)
+                result = apply_mutation(root, args.expected_digest, args.changes)
             elif args.command == "import":
                 result = import_specialist(root, args.work_id, args.attempt_id, args.expected_digest)
             elif args.command == "import-audit":
@@ -128,6 +141,14 @@ def main(argv: list[str] | None = None) -> int:
                 result = audit(root, args.mode)
                 _print_result(result, json_only=args.json)
                 return 0 if result["passed"] else 1
+            elif args.command == "packet":
+                result = write_packet(root, args.work_id, args.attempt_id)
+            elif args.command == "attempt-init":
+                result = initialize_attempt_result(root, args.work_id, args.attempt_id)
+            elif args.command == "attempt-check":
+                result = check_attempt_result(root, args.work_id, args.attempt_id)
+                _print_result(result, json_only=args.json)
+                return 0 if result["ok"] else 1
         _print_result(result)
         return 0
     except ReviewToolError as exc:

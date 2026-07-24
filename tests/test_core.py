@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,19 +9,20 @@ from pathlib import Path
 from tests.helpers import CONTRACT, PACK, clean_unit, new_review
 from review_tool.checks import check_review
 from review_tool.errors import ReviewToolError
-from review_tool.io import canonical_bytes, load_json, load_jsonl, normalize_relative, safe_child, state_digest
+from review_tool.cli import build_parser
+from review_tool.io import canonical_bytes, digest_bytes, jsonl_bytes, load_json, load_jsonl, normalize_relative, safe_child, state_digest
 from review_tool.operations import (
     _format_location,
     _observation_view,
     apply_mutation,
-    deterministic_sample,
     generate,
     import_specialist,
     initialize,
 )
 from review_tool.references import extract_reference, mandatory_block
 from review_tool.security import permitted_validation_classes, security_level, validation_class_allowed
-from review_tool.transactions import recover, simulate_transaction
+from review_tool.identifiers import attempt_token
+from review_tool.transactions import recover, simulate_transaction, state_lock
 
 
 class CoreTests(unittest.TestCase):
@@ -48,14 +50,15 @@ class CoreTests(unittest.TestCase):
         )
         self.assertIn(b"Statement and data separation", extracts["defensive-assurance.md"].data)
         start, end = mandatory_block(source)
-        self.assertTrue(source[start:end].startswith(b"> Review the entire assigned manifest."))
+        self.assertTrue(source[start:end].startswith(b"> For a primary packet, review the entire assigned manifest."))
         self.assertNotIn(b"BEGIN MANDATORY", source[start:end])
         security_start = source.index(b"## R3A. Security levels")
         security_end = source.index(b"## R4. Mandatory specialist block")
         legacy_source = source[:security_start] + source[security_end:]
-        legacy_extracts = {item.filename for item in extract_reference(legacy_source)}
-        self.assertNotIn("security-levels.md", legacy_extracts)
-        self.assertNotIn("defensive-assurance.md", legacy_extracts)
+        with self.assertRaisesRegex(
+            ReviewToolError, "required reference heading not found"
+        ):
+            extract_reference(legacy_source)
 
     def test_path_normalization_and_containment(self):
         self.assertEqual(normalize_relative("a/b.json"), "a/b.json")
@@ -92,35 +95,126 @@ class CoreTests(unittest.TestCase):
             self.assertTrue((committed / "COMPLETE").exists())
             self.assertEqual(load_json(review / "run.json")["checkpointReason"], "recovered")
 
-    def test_specification_epoch_migration(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            review = new_review(Path(temporary))
-            clean_unit(review)
-            result = apply_mutation(review, state_digest(review), None, (PACK.parent / "contract.md", PACK, ["R9/Angle 1"], [1]))
-            self.assertIn("stateDigest", result)
-            run = load_json(review / "run.json")
-            unit = load_jsonl(review / "work-units.jsonl")[0]
-            self.assertEqual(run["specEpoch"], "SPEC-0002")
-            self.assertEqual(unit["specEpoch"], "SPEC-0002")
-            self.assertEqual(unit["status"], "needs_revalidation")
-            generate(review)
-            self.assertEqual(check_review(review)["issues"], [])
+    def test_attempt_token_requires_exactly_four_digits(self):
+        self.assertEqual(attempt_token("ATTEMPT-0001"), "A1")
+        self.assertEqual(attempt_token("ATTEMPT-0012"), "A12")
+        for malformed in ("ATTEMPT-001", "ATTEMPT-1", "ATTEMPT-00001"):
+            with self.assertRaisesRegex(ReviewToolError, "exactly four digits"):
+                attempt_token(malformed)
 
-    def test_whole_specification_migration_preserves_profile_exclusion(self):
+    def test_state_lock_serializes_writers(self):
         with tempfile.TemporaryDirectory() as temporary:
             review = new_review(Path(temporary))
-            clean_unit(review)
-            apply_mutation(
-                review,
-                state_digest(review),
-                None,
-                (PACK.parent / "contract.md", PACK, ["shared rules"], []),
+            with state_lock(review):
+                with self.assertRaisesRegex(ReviewToolError, "holds"):
+                    recover(review)
+            self.assertEqual(recover(review), {"rolledForward": 0, "quarantined": 0})
+
+    def test_recovery_replays_committed_transactions_in_sequence_order(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            review = new_review(Path(temporary))
+            run = load_json(review / "run.json")
+            run["checkpointReason"] = "first"
+            first = simulate_transaction(review, {"run.json": canonical_bytes(run)}, committed=True)
+            run["checkpointReason"] = "second"
+            second = simulate_transaction(review, {"run.json": canonical_bytes(run)}, committed=True)
+            base = review / "tooling" / "transactions"
+            event = load_json(second / "event.json")
+            event["sequence"] = event["sequence"] + 1
+            (second / "event.json").write_bytes(canonical_bytes(event))
+            # Name the later-sequence transaction so it sorts FIRST by
+            # directory name; ordered replay must still apply it last.
+            os.replace(second, base / "TXN-AAA")
+            os.replace(first, base / "TXN-ZZZ")
+            result = recover(review)
+            self.assertEqual(result["rolledForward"], 2)
+            self.assertEqual(load_json(review / "run.json")["checkpointReason"], "second")
+
+    def test_reinitialize_with_different_contract_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            review = base / "review"
+            initialize(review, CONTRACT, PACK, "none")
+            edited = base / "contract.md"
+            edited.write_text(CONTRACT.read_text() + "\nEdited.\n")
+            with self.assertRaisesRegex(ReviewToolError, "preserves a different contract"):
+                initialize(review, edited, PACK, "none")
+            result = initialize(review, CONTRACT, PACK, "none")
+            self.assertTrue(result["idempotent"])
+
+    def test_failed_initialization_leaves_no_partial_review(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            contract = base / "contract.md"
+            pack = base / "pack.md"
+            contract.write_text(
+                CONTRACT.read_text().replace(
+                    "Contract version: 2", "Contract version: 1"
+                )
             )
-            unit = load_jsonl(review / "work-units.jsonl")[0]
-            self.assertEqual(unit["angles"]["5"]["status"], "excluded_by_profile")
-            self.assertEqual(unit["angles"]["5"]["specEpoch"], "SPEC-0002")
-            generate(review)
-            self.assertEqual(check_review(review)["issues"], [])
+            pack.write_bytes(PACK.read_bytes())
+            review = base / "review"
+            with self.assertRaisesRegex(ReviewToolError, "version mismatch"):
+                initialize(review, contract, pack, "none")
+            self.assertFalse(review.exists())
+
+    def test_manifest_history_is_append_only_and_chain_validated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            review = new_review(base)
+            clean_unit(review)
+            units = load_jsonl(review / "work-units.jsonl")
+            units[0]["manifestHistory"] = []
+            changes = base / "delete-history.json"
+            changes.write_bytes(
+                canonical_bytes({"work-units.jsonl": units})
+            )
+            with self.assertRaisesRegex(
+                ReviewToolError,
+                "manifestHistory is append-only",
+            ):
+                apply_mutation(
+                    review,
+                    state_digest(review),
+                    changes)
+            (review / "work-units.jsonl").write_bytes(jsonl_bytes(units))
+            issues = check_review(review, check_generated=False)["issues"]
+            self.assertTrue(
+                any("manifestHistory must be a non-empty array" in issue for issue in issues),
+                issues,
+            )
+
+    def test_omitted_lineage_flag_is_idempotent_for_existing_review(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            review = base / "review"
+            initialize(
+                review,
+                CONTRACT,
+                PACK,
+                "none",
+                stable_reviewer_lineage=True,
+            )
+            args = build_parser().parse_args(
+                [
+                    "init",
+                    "--review-dir",
+                    str(review),
+                    "--contract",
+                    str(CONTRACT),
+                    "--reference-pack",
+                    str(PACK),
+                ]
+            )
+            self.assertIsNone(args.stable_reviewer_lineage)
+            result = initialize(
+                review,
+                CONTRACT,
+                PACK,
+                "none",
+                stable_reviewer_lineage=args.stable_reviewer_lineage,
+            )
+            self.assertTrue(result["idempotent"])
 
     def test_generated_view_freshness(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -271,7 +365,7 @@ class CoreTests(unittest.TestCase):
             permitted_validation_classes("high"),
             ["ordinary", "security_static", "security_dynamic_isolated"],
         )
-        self.assertEqual(security_level({}), "high")
+        self.assertEqual(security_level({}), "")
 
     def test_validation_import_enforces_security_level_end_to_end(self):
         cases = [
@@ -303,12 +397,15 @@ class CoreTests(unittest.TestCase):
                         "workId": "WORK-0001",
                         "attemptId": "ATTEMPT-0001",
                         "reviewerExecutionId": "EXEC-PRIMARY",
+                        "reviewerPrincipalId": "EXEC-PRIMARY",
                         "packetType": "primary_semantic",
                         "unitManifestHash": identities["unitHash"],
                         "attemptManifestHash": identities["attemptHash"],
                         "specEpoch": "SPEC-0001",
                         "securityLevel": level,
                         "status": "complete",
+                        "inspected": {"paths": ["src/example.py"], "symbols": []},
+                        "notInspected": {"paths": [], "symbols": []},
                         "angleDispositions": {
                             str(number): {"status": "reviewed", "evidence": evidence}
                             for number in assigned
@@ -316,6 +413,7 @@ class CoreTests(unittest.TestCase):
                         "secondReviewResults": [],
                         "candidates": [],
                         "residualUncertainty": [],
+                        "remainingScope": {"paths": [], "symbols": [], "angles": []},
                     }
                     attempt_dir = review / "agents/WORK-0001/ATTEMPT-0001"
                     attempt_dir.mkdir(parents=True)
@@ -390,12 +488,15 @@ class CoreTests(unittest.TestCase):
                 "workId": "WORK-0001",
                 "attemptId": "ATTEMPT-0001",
                 "reviewerExecutionId": "EXEC-PRIMARY",
+                "reviewerPrincipalId": "EXEC-PRIMARY",
                 "packetType": "primary_semantic",
                 "unitManifestHash": identities["unitHash"],
                 "attemptManifestHash": identities["attemptHash"],
                 "specEpoch": "SPEC-0001",
                 "securityLevel": "off",
                 "status": "complete",
+                "inspected": {"paths": ["src/example.py"], "symbols": []},
+                "notInspected": {"paths": [], "symbols": []},
                 "angleDispositions": {
                     str(number): {"status": "reviewed", "evidence": evidence}
                     for number in assigned + [5]
@@ -403,6 +504,7 @@ class CoreTests(unittest.TestCase):
                 "secondReviewResults": [],
                 "candidates": [],
                 "residualUncertainty": [],
+                "remainingScope": {"paths": [], "symbols": [], "angles": []},
             }
             (attempt_dir / "result.json").write_text(json.dumps(result))
             (attempt_dir / "validations.jsonl").write_text("")
@@ -414,14 +516,6 @@ class CoreTests(unittest.TestCase):
             unit = load_jsonl(review / "work-units.jsonl")[0]
             self.assertEqual(unit["status"], "complete")
             self.assertEqual(unit["angles"]["5"]["status"], "excluded_by_profile")
-
-    def test_deterministic_audit_sampling(self):
-        units = [{"id": f"WORK-{index:04d}", "riskTier": "B", "status": "complete"} for index in range(1, 101)]
-        first = deterministic_sample(units, "baseline", "work")
-        second = deterministic_sample(list(reversed(units)), "baseline", "work")
-        self.assertEqual(first, second)
-        self.assertEqual(len(first), 25)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,112 @@
 
 All notable changes to this project are documented here.
 
+## 0.4.0 — 2026-07-25
+
+### Fixed
+
+- Terminal `PASS`/`CONDITIONAL PASS` verdicts are now blocked by any material
+  observation that is not explicitly rejected, duplicate, withdrawn, or
+  profile-deferred; previously an `open` material observation passed the gate.
+- `run.json` `verdict` and `currentEpoch` are now validated; a typo'd verdict
+  can no longer bypass the material-concern gate.
+- Attempt identifiers require exactly four digits (`ATTEMPT-NNNN`), closing an
+  aliasing hole where `ATTEMPT-001` and `ATTEMPT-1` produced colliding local
+  candidate/validation namespaces.
+- Re-initializing an existing review now verifies the supplied contract and
+  reference pack byte-for-byte against the preserved copies instead of
+  silently reporting idempotent success.
+- The state-event `operation` field is now a closed enum
+  (`init|mutate|import|import_audit`) enforced at write and at every check;
+  events carry their transaction identity so distinct same-second events can
+  no longer alias and silently drop.
+- Filesystem read errors are reported as read failures, not "invalid JSON",
+  and directory-fsync failures other than unsupported-operation now surface
+  instead of being swallowed.
+- A missing attempt-manifest `outputDirectory` is reported as the actual
+  defect instead of a phantom ownership collision.
+
+### Added
+
+- An exclusive advisory lock (`tooling/LOCK`) now serializes every
+  state-writing operation; concurrent writers fail fast instead of silently
+  clobbering canonical state.
+- Crash recovery replays committed transactions in event-sequence order
+  instead of random transaction-directory order, and both import paths run
+  recovery before reading state.
+
+### Removed
+
+- Removed the specification-migration subsystem (`mutate --migrate-spec`,
+  epoch chains, carry-forward attestations, successor capsules); editing the
+  contract or reference pack now requires a new review, which is the honest
+  cost for a monthly workflow.
+- Removed private telemetry records and benchmark snapshots
+  (`telemetry-record`, `benchmark-snapshot`) and the unused deterministic
+  audit-sampling helper; none were exercised by the review workflow.
+
+## 0.3.0 — 2026-07-23
+
+### Added
+
+- Added specification-version-2 primary-evidence identities, stable reviewer
+  principals, lineage-gated warm reuse, structured Tier-A reasons, and pilot
+  efficiency diagnostics.
+- Added deterministic specialist packets, immutable orientation capsules,
+  attempt-local result scaffolding and preflight validation.
+- Added external-only private telemetry records and derived benchmark
+  snapshots pinned to the 0.2.0 baseline.
+
+### Changed
+
+- Later intersecting primary imports now invalidate affected second reviews
+  mechanically and return the unit to revalidation.
+- Sealed assignments and attempt records are immutable; current v2 evidence,
+  principals, specification identities, capsule structure, and unit-manifest
+  authority are checked consistently at packet, preflight, import, and review
+  gates.
+- Stale second reviews can be replaced without invalidating preserved history;
+  partial reviews cannot satisfy requirements, and duplicate imports are
+  rejected.
+- Specification migrations now create successor capsules and unit manifests,
+  preserve historical attempt epochs, and supersede stale pending assignments.
+- Review gates re-hash imported raw evidence, bind active completions to their
+  imported attempts, require substantive second-review evidence, and enforce
+  both principal and execution independence.
+- Packet and attempt tooling now verifies reference extracts, uses one sealed
+  output-directory authority, rejects malformed nested records, and shares
+  identifier and independence routing.
+- Mutation, migration, import, and whole-review checks now compose shared
+  manifest and result validators through focused phases instead of duplicating
+  gate logic in monolithic command handlers.
+- Private telemetry is source-repository-external and concurrency-safe.
+  Benchmark snapshots are retained, validate source state, and separate stable
+  fingerprints from capture-time identities.
+- Specialist phase scopes prohibit accidental general re-review while
+  preserving incidental observations and explicit follow-up.
+- New reviews use review specification version 2; version-1 reviews are
+  unsupported and fail fast with a re-initialization diagnostic.
+- Specification migration now carries forward only unaffected second-review
+  evidence, seals invalidated completions in tamper-evident history, and
+  validates imported attempts against the recorded v2 epoch chain.
+- Attempt output is confined to unique directories beneath `agents/`; complete
+  results must exhaust assigned scope and provide substantive angle evidence.
+- Preserved specification sources and extracts are hash-pinned, sealed artifact
+  verification is cached per check pass, and concurrent benchmark snapshots
+  allocate unique files atomically.
+- Specification, migration, unit-manifest, and invalidated second-review
+  histories are append-only and verified as complete chains across every
+  recorded epoch.
+- Specialist imports validate and hash one evidence snapshot, enforce coherent
+  attempt lifecycles, reject primary-authored second-review claims, and fail
+  malformed canonical state as diagnostics instead of tracebacks.
+- Primary assignments are bounded by sealed unit scope; completion now requires
+  aggregate inspected coverage for every required angle, and partial results
+  preserve an exact remaining-scope partition.
+- Candidate, validation, evidence-location, execution-identity, benchmark
+  snapshot, packet lifecycle, and migration-authority checks now fail closed;
+  report/audit, canonical graph, and local result schemas have focused modules.
+
 ## 0.2.0 — 2026-07-23
 
 ### Added

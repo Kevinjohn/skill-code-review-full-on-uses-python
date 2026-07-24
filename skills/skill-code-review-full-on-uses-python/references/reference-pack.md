@@ -1,6 +1,6 @@
 # Review Reference Pack
 
-Reference Pack version: 1. Companion to Orchestrator Contract version 1. The
+Reference Pack version: 2. Companion to Orchestrator Contract version 2. The
 state utility preserves these editable sources for each review specification
 epoch and derives phase-specific files using Section R10. Runtime identities
 protect the reviewed repository and review evidence, not this documentation.
@@ -19,22 +19,24 @@ Report every defensible observation within completed scope:
 ## R2. Canonical record schemas
 
 Required fields appear below. Additional fields may enrich, but must not create
-a second authority for the same fact. Mid-review schema changes require an
-explicit migration and full canonical revalidation.
+a second authority for the same fact. Mid-review schema changes are not
+supported; start a new review against the edited specification.
 
 ### `run.json`
 
 ```json
 {
   "schemaVersion": 1,
-  "reviewSpecVersion": 1,
+  "reviewSpecVersion": 2,
   "specEpoch": "SPEC-0001",
   "specification": {
     "initializedAt": "<UTC>",
     "contractSource": "<relative or supplied path>",
     "contractPreserved": "tooling/reference/source/contract.md",
     "referencePackSource": "<relative or supplied path>",
-    "referencePackPreserved": "tooling/reference/source/reference-pack.md"
+    "referencePackPreserved": "tooling/reference/source/reference-pack.md",
+    "referenceManifestPreserved": "tooling/reference/source/manifest.json",
+    "referenceManifestHash": "..."
   },
   "specMigrations": [],
   "repositoryIdentity": "...",
@@ -43,6 +45,11 @@ explicit migration and full canonical revalidation.
   "verdict": null,
   "runtimeCapability": "continuous|persistent_task|external_supervisor|none",
   "capabilitySource": "harness_declared|absent_default_none",
+  "specialistCapabilities": {
+    "stableReviewerLineage": false,
+    "source": "harness_declared|absent_default_false"
+  },
+  "diagnosticAcknowledgements": [],
   "securityProfile": {
     "level": "off|low|medium|high",
     "source": "default|user",
@@ -69,12 +76,12 @@ explicit migration and full canonical revalidation.
 ```
 
 Do not store derived counts in `run.json`. Verdict remains null before a valid
-terminal handoff. A migration entry records an ID, old/new specification epoch,
-preserved source paths, changed sections, affected angles, whether whole-unit
-revalidation applies, operator authority, and time. Lifecycle transitions are
-those in the contract. New runs require `securityProfile`; runs created before
-this field existed retain their original behavior and are interpreted as
-`high`. A security level is immutable for one run.
+terminal handoff. `specMigrations` is always an empty array and `specEpoch` is
+always `SPEC-0001`: specification migration is not supported, so editing the
+contract or Reference Pack requires a new review. Specification provenance is
+immutable. Lifecycle transitions are those in the contract. Every run requires
+`securityProfile`; profile-less or unsupported review state must be
+re-initialized. A security level is immutable for one run.
 
 ### `paths.jsonl`
 
@@ -111,14 +118,27 @@ epoch, current manifest identity, content-set identity, and tier.
   "specEpoch":"SPEC-0001",
   "currentManifest":"assignments/WORK-0001/MANIFEST-0001.json",
   "currentManifestHash":"...",
-  "manifestHistory":[],
+  "manifestHistory":[{
+    "revision":1,
+    "path":"assignments/WORK-0001/MANIFEST-0001.json",
+    "hash":"...",
+    "supersedes":null,
+    "reason":"initial",
+    "preservedAttemptManifestHashes":[]
+  }],
   "contentSetHash":"...",
   "paths":["src/example.py"],
   "title":"transaction commit path",
   "subsystem":"storage",
   "riskTier":"A",
   "securityLevel":"off",
-  "criticalReasons":["durability boundary"],
+  "criticalReasons":[{
+    "code":"durability_recovery",
+    "locations":[{"path":"src/example.py","symbol":"commit"}],
+    "invariant":"Acknowledged state survives the documented boundary.",
+    "materialConsequence":"Acknowledged data can be lost.",
+    "whyTierBInsufficient":"The unit owns the durability boundary."
+  }],
   "status":"pending",
   "reviewAttempts":[],
   "angles":{
@@ -127,7 +147,8 @@ epoch, current manifest identity, content-set identity, and tier.
   },
   "requiredSecondReviews":[{"id":"SR-001","angle":3,"scope":{"kind":"whole_unit"}}],
   "completedSecondReviews":[],
-  "residualUncertainty":[],
+  "secondReviewHistory":[],
+  "residualUncertainty":[{"sourceAttempt":"WORK-0001/ATTEMPT-0001","value":"..."}],
   "updatedAt":"<UTC>"
 }
 ```
@@ -135,8 +156,12 @@ epoch, current manifest identity, content-set identity, and tier.
 All ten string angle keys `1` through `10` are mandatory. Attempt status is
 `assigned`, `complete`, `partial`, `blocked`, or `interrupted`; import
 disposition is `pending`, `imported`, `rejected`, or
-`reconciled_interruption`. Work status is `pending`, `assigned`, `partial`,
-`complete`, `blocked`, or `needs_revalidation`. Angle status is `pending`,
+`reconciled_interruption`, or `superseded`. Only `(assigned, pending)`,
+`(complete|partial|blocked, imported)`, and
+`(interrupted, rejected|reconciled_interruption|superseded)` are valid
+attempt lifecycle pairs. Imported and reconciled interruption rows retain
+their result and evidence hashes; other rows do not. Work status is `pending`,
+`assigned`, `partial`, `complete`, `blocked`, or `needs_revalidation`. Angle status is `pending`,
 `reviewed`, `not_applicable`, `excluded_by_profile`, `blocked`, or
 `needs_revalidation`.
 
@@ -147,7 +172,7 @@ pending -> assigned | blocked
 assigned -> partial | complete | blocked | needs_revalidation
 partial -> assigned | blocked | needs_revalidation
 complete -> needs_revalidation
-blocked -> pending | assigned
+blocked -> pending | assigned | needs_revalidation
 needs_revalidation -> assigned | blocked
 ```
 
@@ -176,8 +201,45 @@ Each completed second review records requirement and attempt identities,
 reviewer execution identity, independence set, primary evidence identity,
 covered scope, evidence, conclusion (`concur`, `dissent`, or `expanded`), and
 canonical observations. Whole-unit requirements need whole-unit coverage; item
-requirements accept whole-unit or a typed superset. The reviewer must differ
-from each primary contributor. Re-derived primary evidence must remain equal.
+requirements need the same valid typed item set. The reviewer
+principal and execution identity must each differ from every primary
+contributor. Re-derived primary evidence must remain equal.
+
+For specification version 2, derive contributors from every imported
+`primary_semantic` attempt whose assigned angle and typed path/symbol scope
+intersect the requirement. `whole_unit` intersects any non-empty assigned
+scope for the required angle. An item requirement intersects when at least one
+typed path or symbol is shared.
+
+Project each contributor to `attemptId`, `manifestHash`, `assignedScope`,
+`resultHash`, `attemptEvidenceHash`, and `specEpoch`; sort by UTF-8 attempt ID
+and hash the canonical array. `attemptEvidenceHash` is the canonical identity
+of the complete attempt-local `result.json` value and parsed
+`validations.jsonl` rows. Imported partial or interrupted evidence participates
+whenever its immutable assignment intersects and records the run's
+specification epoch. A later intersecting primary import changes
+this identity, moves the completion to hash-pinned `secondReviewHistory`, and
+returns the unit to revalidation. Recompute both imported identities from the
+raw files whenever the evidence is checked.
+
+Only the current pending second-review assignment and active completion are
+validated against the current derived identity. Superseded attempts remain
+sealed, and historical completions carry a `historyHash`,
+`previousHistoryHash`, stale reason, attempt manifest identity, and immutable
+raw-result claims. `manifestHistory` and `secondReviewHistory` are append-only;
+their hashes form complete, ordered chains back to the initial manifest or
+first stale completion. Every complete imported second-review attempt appears
+exactly once as an active or historical completion. Retain a replacement as the
+sole active completion. A later intersecting primary automatically marks a
+pending second-review attempt `superseded`; create a fresh attempt against the
+new identity. A partial or blocked second review never creates a completion.
+
+An active completion resolves to exactly one complete imported
+`independent_second_review` attempt and matches its sealed manifest, reviewer
+identities, requirement, result, evidence, scope, and conclusion. Evidence is
+non-empty and the conclusion is `concur`, `dissent`, or `expanded`.
+`candidateRefs` are preserved verbatim and resolve exactly to the recorded
+canonical observations.
 
 Completion requires ten dispositioned angles: reviewed or validly
 not-applicable angles plus the profile-excluded Angle 5 at level `off`. It also
@@ -187,21 +249,31 @@ explicit uncertainty.
 ### Immutable unit manifest
 
 ```json
-{"workId":"WORK-0001","revision":1,"supersedes":null,"reason":"initial","revisionEpoch":"EPOCH-0001","reviewSpecVersion":1,"specEpoch":"SPEC-0001","riskTier":"A","securityLevel":"off","contentSetHash":"...","paths":[{"path":"src/example.py","contentId":"..."}],"sizeTotals":{"productionFiles":1,"implementationLines":120},"limitException":null,"symbols":[],"entryPoints":[],"boundaries":[],"knownInvariants":[],"requiredAngleDispositions":[1,2,3,4,6,7,8,9,10],"requiredSecondReviews":[{"id":"SR-001","angle":3,"scope":{"kind":"whole_unit"}}],"repositoryInstructions":[],"permittedValidationScope":[],"permittedValidationClasses":["ordinary"],"outputSchema":"specialist-result-schema.md","preservedAttemptManifestHashes":[]}
+{"workId":"WORK-0001","revision":1,"supersedes":null,"reason":"initial","revisionEpoch":"EPOCH-0001","reviewSpecVersion":2,"specEpoch":"SPEC-0001","riskTier":"A","securityLevel":"off","subsystem":"storage","orientationCapsule":{"path":"assignments/capsules/storage.json","hash":"..."},"contentSetHash":"...","paths":[{"path":"src/example.py","contentId":"..."}],"sizeTotals":{"productionFiles":1,"implementationLines":120},"limitException":null,"symbols":[],"requiredAngleDispositions":[1,2,3,4,6,7,8,9,10],"requiredSecondReviews":[{"id":"SR-001","angle":3,"scope":{"kind":"whole_unit"}}],"repositoryInstructions":[],"permittedValidationScope":[],"permittedValidationClasses":["ordinary"],"outputSchema":"specialist-result-schema.md","preservedAttemptManifestHashes":[]}
 ```
 
 Successors increment revision, name the predecessor path and identity, explain
 why, and list preserved attempt-manifest identities. Within one content epoch,
 requirements may only grow or widen.
 
+Published unit and attempt manifest files are immutable. Never replace a
+published `assignments/...` file or rewrite sealed assignment fields in a
+`reviewAttempts` row; create a successor manifest or a new attempt. Lifecycle
+fields change only through import or the explicit pending-to-superseded
+transition. An attempt manifest's
+`reviewSpecVersion` and `specEpoch` must exactly match the run.
+
 ### Immutable attempt manifest
 
 ```json
-{"workId":"WORK-0001","attemptId":"ATTEMPT-0001","unitManifest":"assignments/WORK-0001/MANIFEST-0001.json","unitManifestHash":"...","packetType":"primary_semantic","reviewerExecutionId":"HOST-EXEC-1042","reviewSpecVersion":1,"specEpoch":"SPEC-0001","securityLevel":"off","assignedScope":{"paths":["src/example.py"],"symbols":[],"angles":[1,2,3,4,6,7,8,9,10]},"secondReviewRequirementId":null,"independentFromAttemptIds":[],"primaryEvidenceSetHash":null,"repositoryInstructions":[],"permittedValidationScope":[],"permittedValidationClasses":["ordinary"],"outputDirectory":"agents/WORK-0001/ATTEMPT-0001"}
+{"workId":"WORK-0001","attemptId":"ATTEMPT-0001","unitManifest":"assignments/WORK-0001/MANIFEST-0001.json","unitManifestHash":"...","packetType":"primary_semantic","reviewerPrincipalId":"PRINCIPAL-001","reviewerExecutionId":"HOST-EXEC-1042","reviewerReuseMode":"cold","reviewerBatchId":null,"reviewSpecVersion":2,"specEpoch":"SPEC-0001","securityLevel":"off","assignedScope":{"paths":["src/example.py"],"symbols":[],"angles":[1,2,3,4,6,7,8,9,10]},"secondReviewRequirementId":null,"independentFromAttemptIds":[],"primaryEvidenceSetHash":null,"repositoryInstructions":[],"permittedValidationScope":[],"permittedValidationClasses":["ordinary"],"outputDirectory":"agents/WORK-0001/ATTEMPT-0001"}
 ```
 
 Second-review manifests name one current requirement, its single angle, all
-contributing primary attempts, and a sealed primary evidence identity.
+contributing primary attempts, and a sealed primary evidence identity. Their
+paths and symbols match that requirement exactly. Every `outputDirectory` is a
+unique child of `agents/`; assignment, tooling, and canonical-state namespaces
+are never valid output targets.
 
 ### `observations.jsonl`
 
@@ -247,7 +319,7 @@ resolution evidence.
 ### `state-events.jsonl`
 
 ```json
-{"sequence":1,"previousEventHash":null,"eventHash":"...","operation":"init|mutate|import|import_audit","actor":"orchestrator","timestamp":"<UTC>","preStateDigest":null,"postStateDigest":"...","targets":["run.json"]}
+{"sequence":1,"previousEventHash":null,"eventHash":"...","operation":"init|mutate|import|import_audit","actor":"orchestrator","timestamp":"<UTC>","transaction":"TXN-...","preStateDigest":null,"postStateDigest":"...","targets":["run.json"]}
 ```
 
 The event identity is calculated from all fields except `eventHash`. State
@@ -260,7 +332,7 @@ are gapless; each prior identity and digest must link. `agents/`, `baseline/`,
 ### Specialist `result.json` (attempt-local)
 
 ```json
-{"workId":"WORK-0001","attemptId":"ATTEMPT-0001","reviewerExecutionId":"HOST-EXEC-1042","packetType":"primary_semantic","unitManifestHash":"...","attemptManifestHash":"...","specEpoch":"SPEC-0001","securityLevel":"off","status":"complete","inspected":{"paths":[],"symbols":[]},"notInspected":{"paths":[],"symbols":[]},"angleDispositions":{"1":{"status":"reviewed","evidence":[]}},"secondReviewResults":[],"candidates":[],"residualUncertainty":[],"remainingScope":{"paths":[],"symbols":[],"angles":[]}}
+{"workId":"WORK-0001","attemptId":"ATTEMPT-0001","reviewerPrincipalId":"PRINCIPAL-001","reviewerExecutionId":"HOST-EXEC-1042","packetType":"primary_semantic","unitManifestHash":"...","attemptManifestHash":"...","specEpoch":"SPEC-0001","securityLevel":"off","status":"complete","inspected":{"paths":["src/example.py"],"symbols":[]},"notInspected":{"paths":[],"symbols":[]},"angleDispositions":{"1":{"status":"reviewed","evidence":[{"scopeCovered":{"kind":"whole_unit"},"locations":["src/example.py:1"],"claim":"Concrete semantic claim."}]}},"secondReviewResults":[],"candidates":[],"residualUncertainty":[],"remainingScope":{"paths":[],"symbols":[],"angles":[]}}
 ```
 
 Primary packets disposition every assigned profile-required angle;
@@ -274,6 +346,13 @@ reproduction, `recommendation`, regression test, counterargument, residual
 uncertainty, and validation references. Proposed values remain non-authoritative
 until canonical validation. Use an empty value when a detail is not yet
 established; never invent it.
+
+A `complete` result inspects every assigned path and symbol, leaves
+`notInspected` and `remainingScope` empty, and supplies substantive
+`scopeCovered`, `locations`, and `claim` fields for every angle disposition.
+On import, unit-level residual uncertainty is merged as
+`{"sourceAttempt":"WORK-NNNN/ATTEMPT-NNNN","value":...}` records; one attempt
+never erases another attempt's disclosure.
 
 ### Specialist `validations.jsonl` (attempt-local)
 
@@ -313,6 +392,22 @@ control, or unusually complex weakly-tested behavior with material blast
 radius. Normally limit to 20 production files and 8,000 implementation lines.
 Require symbol-level evidence, failure sequences, non-empty authoritative
 second-review requirements, and focused validation or a precise limitation.
+
+For specification version 2, use one or more controlled reason codes:
+`durability_recovery`, `migration_backup_restore`,
+`isolation_shared_mutation`, `unsafe_concurrent_code`,
+`identity_permission_boundary`, `secret_tenant_boundary`,
+`untrusted_parsing`, `consensus_replication`, `public_compatibility`,
+`destructive_administration`, `external_acknowledgement`,
+`central_high_fanout_control`, or `complex_material_behavior`. Each reason
+records concrete path or symbol locations, the critical invariant, plausible
+material consequence, and why Tier B plus reconciliation is insufficient.
+Tier A density is diagnostic evidence to revisit granularity, never a quota.
+At five or more pilot units, Tier A density of 40% or greater emits
+`PILOT-TIER-A-DENSITY`. The acknowledgement is an object containing `id` and
+the current `diagnosticIdentity`; it expires when the specification epoch or
+work-unit projection changes. Repository-wide dispatch is prohibited while
+`review-tool check` reports `bulkDispatchAllowed: false`.
 
 ### Tier B — normal production
 
@@ -364,8 +459,8 @@ Every level prohibits external targets, production services, persistence, use
 of real credentials or secret material, destructive action, unrestricted
 network scanning, and mutation of external services. `high` increases
 defensive depth; it never relaxes these boundaries. A run's security level is
-immutable. Start a fresh run to change it; old runs with no recorded profile
-retain legacy `high` behavior.
+immutable. Start a fresh run to change it. A v2 run without a recorded profile
+is invalid and must be re-initialized.
 
 At `off`, classify a dedicated security-only path using path metadata,
 documented purpose, and the minimum content necessary to establish the
@@ -440,8 +535,13 @@ not trade clarity for synonym substitution.
 ## R4. Mandatory specialist block
 
 <!-- BEGIN MANDATORY SPECIALIST BLOCK -->
-> Review the entire assigned manifest. Persist evidence while working and write
-> only to your assigned attempt directory. Inspect implementation, important
+> For a primary packet, review the entire assigned manifest. For every other
+> packet, stay within its named angle, observation, seam, tail class, or audit
+> sample and inspect only the supporting scope needed to establish the result.
+> Do not proactively restart general review; preserve incidental observations
+> and record exact follow-up scope when widening is required. Persist evidence
+> while working and write only to your assigned attempt directory. Inspect
+> implementation, important
 > callers and callees, failure paths, tests, configuration, and relevant
 > documentation. Disposition every required review angle. Report every
 > defensible observation regardless of severity; there is no finding cap.
@@ -458,7 +558,9 @@ not trade clarity for synonym substitution.
 > symbols, completed and pending angles, validations,
 > observations, and residual uncertainty. Mark the result `complete`, `partial`,
 > or `blocked`; partial or blocked results identify exact remaining scope.
-> Persist the result before sending a summary.
+> Persist the result before sending a compact receipt containing only status,
+> result path, counts, and remaining scope. Do not repeat the persisted result
+> in chat.
 <!-- END MANDATORY SPECIALIST BLOCK -->
 
 ## R5. Phase 4 cross-component checklist
@@ -688,12 +790,65 @@ unique marker lines, excluding markers and surrounding blank lines. Preserve
 bytes without newline normalization.
 
 `manifest.json` records `reviewSpecVersion`, `specEpoch`, preserved source
-paths and byte sizes, plus every derived file's path, source section, source
-byte start/end, and byte size. It does not list itself. Verification regenerates
-all ranges and compares bytes; editing both an extract and manifest cannot pass.
-No expected external source digest is required.
+paths, byte sizes, and SHA-256 identities, plus every derived file's path,
+source section, source byte start/end, byte size, and SHA-256 identity. It does
+not list itself. `run.json` pins the active manifest identity and an immutable
+copy of the initial manifest. Verification regenerates all ranges and compares
+source, manifest, and installed bytes; coordinated edits to a preserved source
+and extract cannot pass.
 
-A specification migration preserves new sources beneath
-`tooling/reference/migrations/SPEC-NNNN/`, records the new epoch and extraction
-metadata, and atomically updates affected manifests and revalidation state.
-Never overwrite an earlier epoch's sources.
+The preserved sources and installed extracts are immutable for the life of the
+run. Every review gate re-verifies the preserved source manifest, not only the
+active installation. Never overwrite the preserved sources; editing the
+specification documents requires a new review.
+
+## R11. Specification-version-2 efficiency records
+
+### Orientation capsule
+
+Store each immutable subsystem capsule beneath `assignments/capsules/` so its
+bytes participate in the canonical state digest. A capsule records
+`capsuleId`, `baselineContentSetHash`, `specEpoch`, `subsystem`, component
+role, entry points, public boundaries, dependency seams, important
+callers/callees, relevant tests, documentation, configuration, commands,
+shared invariants, failure boundaries, evidence locations, and applicable
+architecture/reference identities. Unit manifests reference the complete
+capsule path and hash and do not duplicate shared orientation facts.
+
+A capsule is an index, never proof. Specialists verify material claims against
+the assigned baseline source. A changed baseline, specification epoch, or
+shared orientation fact requires a successor capsule and affected successor
+unit manifests.
+
+The exact identity fields are `architectureHash` (the SHA-256 identity of
+`architecture.md`) and `referenceManifestHash` (the SHA-256 identity of
+`tooling/reference/manifest.json`). Every capsule list field is structurally
+validated. Missing identity files, malformed capsules, and subsystem mismatches
+are structural failures; only a genuine identity or epoch freshness failure
+may be temporarily tolerated while the unit is `needs_revalidation`.
+
+### Packet and attempt tooling
+
+Use `review-tool packet` to build a deterministic packet from the immutable
+attempt manifest, assigned-angle extracts, output schema, and capsule. Use
+`review-tool attempt-init` to create an attempt-local result skeleton and
+`review-tool attempt-check` before import. These commands do not modify
+canonical state. Packet generation verifies every consumed extract against the
+preserved Reference Pack. Attempt initialization, preflight, and import all
+resolve the same sealed `outputDirectory`. They report capsules above 32 KiB
+and packets above 128 KiB so shared orientation does not silently erase the
+token-efficiency gain. A complete result inspects all assigned paths and
+symbols, leaves `notInspected` and `remainingScope` empty, and supplies
+substantive scope, locations, and a claim for every completed angle.
+
+### Reviewer reuse
+
+`reviewerPrincipalId` is an opaque run-local stable specialist principal.
+`reviewerExecutionId` identifies one attempt. `reviewerReuseMode` is `cold` or
+`warm_batch`; warm attempts also name an opaque `reviewerBatchId`. Warm mode
+is invalid unless `specialistCapabilities.stableReviewerLineage` is true, the
+packet is `independent_second_review`, and the batch contains no more than five
+assignments for one principal. Primary semantic attempts use `cold`.
+Every conclusion must stand on current-assignment evidence and must not
+reference prior attempt-local candidates or dispositions unless explicitly
+assigned.

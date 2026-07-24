@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -35,23 +36,18 @@ def canonical_identity(value: Any) -> str:
     return digest_bytes(canonical_bytes(value).removesuffix(b"\n"))
 
 
-def load_json(path: Path) -> Any:
+def parse_json_bytes(data: bytes, label: str) -> Any:
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except FileNotFoundError as exc:
-        raise ReviewToolError(f"missing JSON file: {path}") from exc
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ReviewToolError(f"invalid JSON in {path}: {exc}") from exc
+        return json.loads(data)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ReviewToolError(f"invalid JSON in {label}: {exc}") from exc
 
 
-def load_jsonl(path: Path) -> list[dict[str, Any]]:
+def parse_jsonl_bytes(data: bytes, label: str) -> list[dict[str, Any]]:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError as exc:
-        raise ReviewToolError(f"missing JSONL file: {path}") from exc
-    except (OSError, UnicodeError) as exc:
-        raise ReviewToolError(f"cannot read {path}: {exc}") from exc
+        lines = data.decode("utf-8").splitlines()
+    except UnicodeError as exc:
+        raise ReviewToolError(f"cannot read {label}: {exc}") from exc
     rows: list[dict[str, Any]] = []
     for number, line in enumerate(lines, 1):
         if not line.strip():
@@ -59,11 +55,35 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
         try:
             row = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise ReviewToolError(f"invalid JSONL in {path}:{number}: {exc.msg}") from exc
+            raise ReviewToolError(
+                f"invalid JSONL in {label}:{number}: {exc.msg}"
+            ) from exc
         if not isinstance(row, dict):
-            raise ReviewToolError(f"invalid JSONL in {path}:{number}: row must be an object")
+            raise ReviewToolError(
+                f"invalid JSONL in {label}:{number}: row must be an object"
+            )
         rows.append(row)
     return rows
+
+
+def load_json(path: Path) -> Any:
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise ReviewToolError(f"missing JSON file: {path}") from exc
+    except OSError as exc:
+        raise ReviewToolError(f"cannot read {path}: {exc}") from exc
+    return parse_json_bytes(data, str(path))
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise ReviewToolError(f"missing JSONL file: {path}") from exc
+    except OSError as exc:
+        raise ReviewToolError(f"cannot read {path}: {exc}") from exc
+    return parse_jsonl_bytes(data, str(path))
 
 
 def jsonl_bytes(rows: Iterable[dict[str, Any]]) -> bytes:
@@ -108,12 +128,18 @@ def ensure_review_root(path: Path, *, create: bool = False) -> Path:
 def fsync_directory(path: Path) -> None:
     try:
         fd = os.open(path, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
     except OSError:
-        pass
+        # Platforms such as Windows cannot open directories at all.
+        return
+    try:
+        os.fsync(fd)
+    except OSError as exc:
+        # Filesystems that cannot fsync a directory are acceptable; real
+        # write failures (EIO, ENOSPC) must surface.
+        if exc.errno not in (errno.EINVAL, errno.ENOTSUP):
+            raise
+    finally:
+        os.close(fd)
 
 
 def atomic_write(path: Path, data: bytes) -> None:

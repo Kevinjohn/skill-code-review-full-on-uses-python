@@ -1,11 +1,14 @@
 # Exhaustive Repository Review — Orchestrator Contract
 
-Contract version: 1. This is the behavioral authority for an exhaustive,
+Contract version: 2. This is the behavioral authority for an exhaustive,
 evidence-backed review. The companion Reference Pack supplies schemas,
 checklists, and report rules. Both documents are editable sources. At review
 initialization, preserve their current bytes inside the review and use those
 copies for the current specification epoch. No external signature or expected
 document digest governs their authority.
+
+The bundled tool supports contract version 2 only. Reject earlier review state
+with a re-initialization diagnostic; do not infer legacy defaults.
 
 This is a read-only review of repository content. Only review records, reports,
 tooling, and isolated validation artifacts are authorized writes. Determine
@@ -73,10 +76,9 @@ broad category label. Keep the canonical security level and validation class
 explicit. The taxonomy improves precision; it never changes the purpose,
 classification, authority, or limits of an assignment.
 
-Treat a missing profile in a run created before this feature as legacy `high`
-to preserve its original scope. The level is immutable within one run. A
-different requested level requires a fresh run; never silently widen or narrow
-an existing run.
+`securityProfile` is mandatory v2 state. The level is immutable within one run.
+A different requested level requires a fresh run; never silently widen or
+narrow an existing run.
 
 ## 3. Review directory and resume
 
@@ -113,19 +115,20 @@ Use `explicit_moving_target` only on explicit request. Each accepted content
 change creates a revision epoch, returns affected units to revalidation, and
 requires a final cutoff. On resume, never attach evidence to changed content.
 
-## 5. Specification epochs
+## 5. Specification epoch
 
 Initialization copies the supplied `contract.md` and `reference-pack.md` to
 `tooling/reference/source/`, records `reviewSpecVersion`, `SPEC-0001`, original
 relative paths, preserved paths, and initialization time, then derives the
 Reference Pack extracts mechanically.
 
-An explicit specification migration increments `specEpoch`, preserves new
-source bytes under a migration directory, records changed sections and affected
-angles, creates successor unit manifests, and marks affected dispositions
-`needs_revalidation`. Shared-schema or shared-rule changes revalidate whole
-units. Every angle disposition and attempt manifest records its `specEpoch`.
-Source-document editability never depends on regenerating an approval digest.
+A review has exactly one specification epoch, `SPEC-0001`, fixed at
+initialization. The preserved specification bytes are immutable for the life
+of the run. Changing the contract or Reference Pack mid-review is not
+supported: finish or honestly pause the current review, then start a new
+review against the edited documents. Every angle disposition and attempt
+manifest records its `specEpoch`. Source-document editability never depends on
+regenerating an approval digest.
 
 ## 6. Canonical state and integrity
 
@@ -143,8 +146,9 @@ commit marker, materialize idempotently, append the event, and write a
 completion marker. Recover committed incomplete transactions by roll-forward;
 quarantine uncommitted staging. Identifiers become permanent only at commit.
 
-Hash-linked state events record operation, actor, timestamp, pre/post digests,
-and targets. Digests here protect a particular run's repository content,
+Hash-linked state events record one of the fixed operations `init`, `mutate`,
+`import`, or `import_audit`, plus actor, timestamp, transaction identity,
+pre/post digests, and targets. Digests here protect a particular run's repository content,
 canonical state, transactions, raw results, validations, audit sample, and
 reports; they do not restrict editing the Skill documentation.
 
@@ -172,26 +176,73 @@ sampled scope. Failure imports nothing and allocates no identifiers.
 Create cohesive units around behavior and invariants: packages, interfaces,
 transaction or recovery paths, protocols, trust boundaries, platform
 implementations, generators, tests, documentation, or release subsystems. Do
-not group unrelated files or split an invariant without an integrator.
+not group unrelated files or split an invariant without an integrator. Avoid
+unnecessary fragmentation while preserving cohesive, bounded semantic units.
+Parallelization strategy is not a semantic boundary.
 
 Classify units Tier A, B, or C using the Reference Pack. Tier A is normally at
 most 20 production files or 8,000 implementation lines; Tier B at most 50 or
 20,000; Tier C remains cohesive and bounded. Justify exceptions before
 assignment.
 
+For specification version 2, every Tier A unit records structured critical
+reasons using the Reference Pack reason codes, concrete locations, the
+critical invariant, plausible material consequence, and why Tier B plus
+reconciliation is insufficient. High Tier A density or many tiny units is a
+pilot warning, not a quota or automatic reclassification. Resolve the
+calibration concern or acknowledge diagnostic `PILOT-TIER-A-DENSITY` together
+with its current diagnostic identity in `run.json.diagnosticAcknowledgements`
+before repository-wide dispatch. The identity binds the acknowledgement to the
+specification epoch and work-unit set; a changed set requires a new
+acknowledgement. Treat `check.bulkDispatchAllowed: false` as a mechanical stop.
+
 Every immutable unit manifest records content identities, risk, size, security
 level, permitted validation classes, ten angle states, profile-required
 dispositions, `reviewSpecVersion`, `specEpoch`, and authoritative
-`requiredSecondReviews`. For unchanged content, successor manifests may only
-add or widen requirements. Every dispatch has an immutable attempt manifest
+`requiredSecondReviews`. Preserve the full append-only manifest chain,
+including each predecessor path and hash and every attempt-manifest identity
+carried into a successor. Every dispatch has an immutable attempt manifest
 with exact scope, security level, permitted validation classes, reviewer
 execution identity, packet type, manifest identity, and specification epoch.
+Every attempt output directory is unique and contained beneath `agents/`.
 
 Second review begins only after intersecting primary scope is sealed. Record a
 primary-evidence-set identity and require a distinguishable reviewer execution
-identity. Whole-unit requirements require whole-unit coverage; item scope
-requires a typed superset. Later intersecting primary evidence invalidates the
-completion and returns the unit to revalidation.
+identity and reviewer principal. Whole-unit requirements require whole-unit
+coverage; item scope requires the same valid typed item set. Later intersecting
+primary evidence invalidates the completion, supersedes any pending
+second-review assignment bound to the old evidence identity, and returns the
+unit to revalidation.
+
+A stale completion never satisfies a requirement. Preserve it as history,
+create a new immutable second-review attempt against the newly derived primary
+evidence identity, and import a complete replacement. Partial or blocked
+second-review results preserve evidence but never create a completion.
+Second-review assignments and completion claims match the requirement's angle
+and typed scope exactly; extra scope is not accepted as proof.
+Second-review history is append-only and hash-chained. Every complete imported
+second-review attempt remains represented exactly once by an active or
+historical completion.
+
+For specification version 2, derive the contributor set from every imported
+`primary_semantic` attempt whose immutable assigned scope intersects the
+requirement. Seal each contributor's manifest, assigned scope, result and
+validation evidence, and specification epoch using the exact Reference Pack
+projection. Recompute the raw result and validation identities at review
+gates. Never trust a caller-supplied subset or stored hash without its artifact.
+
+Treat reviewer principal and execution identity separately. A reviewer
+principal is an opaque run-local identity stable across one specialist
+context; an execution identity names one attempt. Warm reuse is permitted only
+when the host declares stable reviewer lineage as an orthogonal specialist
+capability. Otherwise use cold reviewers. Context mode is telemetry, never
+independence evidence.
+
+`reviewerPrincipalId` must be a non-empty stable identity on every
+specification-version-2 attempt and result. Warm reuse is limited to independent
+second reviews and to at most five assignments per batch. Primary semantic
+review is always cold. A second review must differ from every contributor by
+both principal and execution identity.
 
 Partial or interrupted work preserves usable evidence, records exact remainder,
 and creates a new attempt. It never becomes an exclusion or not-applicable
@@ -201,6 +252,12 @@ adapter, executable or workflow, argument representation and parsing boundary,
 packet loading, result persistence, and import path intended for scaled waves,
 with production-shaped parameters. Exercise tool recovery, import, generation,
 audit, packet clarity, evidence quality, and bookkeeping ratio.
+
+During the pilot, report unit-size distribution and Tier A density, challenge
+unnecessary one-file or tiny units, and check whether splitting multiplied
+second-review requirements around one invariant. If calibration changes a
+unit, manifest, packet, or assignment set, rerun the affected pilot through
+the scaled dispatch path before scaling.
 
 Every wave fails closed. Parse and validate its input before constructing work;
 never default missing, malformed, or wrongly shaped input to an empty
@@ -237,6 +294,14 @@ output schema, and the mandatory specialist block. Exclude the full governing
 documents, unrelated findings, other ledgers, conversation history, and
 orchestration mechanics.
 
+For specification version 2, generate packets mechanically with `review-tool
+packet`. Put stable instructions and assigned reference extracts before
+dynamic scope. Include the immutable subsystem orientation capsule as an
+index, not a substitute for source inspection. Capsules are the single
+authority for shared entry points, seams, invariants, tests, configuration,
+commands, and evidence locations; unit manifests retain only unit-specific
+facts and reference the capsule by identity.
+
 When Angle 5 is assigned, include the defensive-assurance extract and express
 the assignment as concrete application invariants. Do not maintain a
 prohibited-word list, hide the defensive purpose, omit the canonical profile,
@@ -270,11 +335,16 @@ release paths, documentation, accessibility, or low-severity review.
    and after. Stop a command that mutates tracked content and preserve user
    changes.
 4. **Cross-component reconciliation:** apply the Reference Pack integration
-   checklist once primary coverage is substantially complete.
+   checklist once primary coverage is substantially complete. Do not
+   proactively restart general unit review; preserve incidental observations
+   and schedule exact follow-up scope when evidence requires widening.
 5. **Dedicated tail review:** explicitly cover P3/P4 defects, defensive gaps,
    brittle tests, SDKs, examples, platforms, builds, packaging, release,
    documentation, observability, operations, accessibility, maintainability,
    localized performance, compatibility, nits, suggestions, and questions.
+   Stay within these underrepresented classes rather than repeating general
+   review. Preserve incidental observations and schedule explicit follow-up
+   when widening is required.
 6. **Candidate validation and deduplication:** for in-profile candidates, trace
    reachability, guards, cleanup, tests, and promises; establish trigger,
    expected/actual behavior, impact, likelihood, and blast radius; challenge

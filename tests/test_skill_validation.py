@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 import re
 import unittest
-from pathlib import Path
-
 from tests.helpers import ROOT
+from review_tool.policy import TIER_A_REASON_CODES
 
 
 class SkillValidationTests(unittest.TestCase):
@@ -104,6 +103,51 @@ class SkillValidationTests(unittest.TestCase):
             "zero scheduled for non-empty wave": "rejected",
             "canonical no-op": "accepted",
         })
+
+    def test_tier_a_reason_codes_are_documented(self):
+        reference = (self.skill / "references/reference-pack.md").read_text()
+        for code in TIER_A_REASON_CODES:
+            self.assertIn(f"`{code}`", reference)
+
+    def test_identity_and_independence_routing_are_centralized(self):
+        runtime = self.skill / "scripts/review_tool"
+        sources = {
+            path.name: path.read_text()
+            for path in runtime.glob("*.py")
+        }
+        self.assertEqual(
+            sum(text.count("def attempt_token(") for text in sources.values()),
+            1,
+        )
+        for name in ("checks.py", "operations.py", "packets.py"):
+            self.assertNotIn("validate_second_review_evidence(", sources[name])
+            self.assertNotIn("validate_v1_reviewer_independence(", sources[name])
+
+    def test_documentation_does_not_claim_profileless_legacy_support(self):
+        repository_readme = (ROOT / "README.md").read_text()
+        reference = (
+            self.skill / "references/reference-pack.md"
+        ).read_text()
+        for text in (repository_readme, reference):
+            self.assertNotIn(
+                "retain their original `high` behavior", text
+            )
+            self.assertIn("re-initializ", text)
+
+    def test_trust_critical_responsibilities_are_split(self):
+        runtime = self.skill / "scripts/review_tool"
+        operations = (runtime / "operations.py").read_text()
+        checks = (runtime / "checks.py").read_text()
+        reporting = (runtime / "reporting.py").read_text()
+        canonical = (runtime / "canonical_checks.py").read_text()
+        result_schema = (runtime / "result_schema.py").read_text()
+        self.assertNotIn("def generate(", operations)
+        self.assertNotIn("def audit(", operations)
+        self.assertIn("def generate(", reporting)
+        self.assertIn("def audit(", reporting)
+        self.assertNotIn("def _verify_canonical_graph(", checks)
+        self.assertIn("def _verify_canonical_graph(", canonical)
+        self.assertIn("def validate_candidate_schema(", result_schema)
 
 
 if __name__ == "__main__":

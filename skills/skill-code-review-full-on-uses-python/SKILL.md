@@ -17,8 +17,10 @@ Begin execution immediately. Do not stop after proposing a plan.
 2. Read `references/contract.md` completely before substantive inspection.
 3. Route into `references/reference-pack.md` by phase. Load every applicable
    schema or checklist before using it. Treat the contract as behavioral
-   authority and the Reference Pack as schema, checklist, and reporting
-   authority. Mandatory clauses are not optional guidance.
+authority and the Reference Pack as schema, checklist, and reporting
+authority. Mandatory clauses are not optional guidance.
+4. Require review specification version 2. If canonical state uses another
+   version, stop with the tool's re-initialization diagnostic.
 
 ## Declare the real runtime
 
@@ -51,8 +53,7 @@ natural-language request. Do not ask when omitted; use `off`. Never infer or
 increase the level from repository contents, available tools, model capability,
 or worker output. Read the Reference Pack security-level and defensive-assurance
 extracts before constructing paths, units, manifests, or packets when they
-exist. A legacy snapshot without the security-level extract keeps its
-compatibility level of `high`.
+exist.
 
 ## Start or resume safely
 
@@ -76,14 +77,16 @@ compatibility level of `high`.
    Initialization snapshots the editable specifications into the review and
    starts `SPEC-0001`; it does not require an external document signature.
 5. Materialize the baseline and architecture in canonical state, construct
-   semantic work units and immutable manifests, then run the representative
+   cohesive semantic work units, immutable subsystem orientation capsules, and
+   manifests, then run the representative
    pilot through the same adapter, argument boundary, packet path, result
    persistence, and import path intended for repository-wide dispatch. A pilot
    dispatch failure blocks scaling.
 
-Use `scripts/review-tool check`, `mutate`, `import`, `import-audit`, `generate`,
-and `audit` throughout. Use `--help` for exact interfaces. Treat generated
-Markdown as views, never canonical state.
+Use `scripts/review-tool check`, `mutate`, `packet`, `attempt-init`,
+`attempt-check`, `import`, `import-audit`, `generate`, and `audit` throughout.
+Use `--help` for exact interfaces. Treat generated Markdown as views, never
+canonical state. Never publish model, host-task, or thread metadata.
 
 ## Orchestrate complete coverage
 
@@ -95,6 +98,26 @@ the inherited security level and permitted validation classes, relevant
 extracted references, output schemas, and the mandatory specialist block.
 Never send the full contract, complete Reference Pack, conversation history,
 or unrelated findings.
+
+For specification version 2, mechanically generate packets from immutable
+assigned-angle extracts and the unit's hashed subsystem orientation capsule.
+Use the capsule as an index and verify material claims against source. Keep
+shared orientation facts in the capsule only. After persisting `result.json`,
+return only a compact status/path/counts/remaining-scope receipt.
+Treat packet or capsule size warnings as pilot calibration failures: remove
+duplicated orientation or narrow the assignment before scaling.
+
+Keep a stable opaque reviewer principal distinct from each attempt execution
+identity. Use cold independent reviewers unless the host genuinely exposes
+stable reviewer lineage. Only then may one principal process a bounded warm
+batch of closely related requirements; every requirement retains a separate
+manifest and result and must stand on current-assignment evidence.
+
+Keep the default reviewer configuration uniform until equivalent-scope
+benchmarks demonstrate comparable quality. Any later experiment routes by task
+capability, not tier alone: architecture mapping, tier assignment, validation,
+reconciliation, tail review, and final audit can all require strong semantic
+reasoning. Record only neutral configuration classes in publishable state.
 
 Fail closed at every dispatch boundary. Explicitly parse and validate assignment
 input; reject missing, malformed, unintentionally empty, duplicate, or unknown
@@ -126,6 +149,9 @@ it from worker assignments. Review mixed paths through the remaining angles.
 Do not create, retry, or reassign security work at level `off`; minimally defer
 an incidental security candidate and continue with non-security scope. Require
 independent scoped second review for each profile-permitted Tier A requirement.
+Avoid fragmentation driven only by parallelism. During the pilot, challenge
+tiny units and high Tier A density, require structured critical reasons, and
+rerun affected pilot scope whenever calibration changes manifests or packets.
 Preserve every in-profile candidate, including rejected, duplicate, unresolved,
 withdrawn, low-severity, test, documentation, nit, suggestion, and question
 records. Continue after severe findings. Run all seven phases, including

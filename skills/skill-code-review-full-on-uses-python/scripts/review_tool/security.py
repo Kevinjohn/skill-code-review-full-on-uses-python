@@ -16,11 +16,11 @@ ALLOWED_VALIDATION_CLASSES = {
 
 
 def security_profile(run: dict[str, Any]) -> dict[str, Any]:
-    """Return the declared profile or the compatibility profile for old runs."""
+    """Return the declared v2 profile, or an empty invalid profile."""
     declared = run.get("securityProfile")
     if isinstance(declared, dict):
         return declared
-    return {"level": "high", "source": "legacy", "externalTargets": False}
+    return {}
 
 
 def security_level(run: dict[str, Any]) -> str:
