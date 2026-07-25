@@ -1474,11 +1474,10 @@ def import_audit(root: Path, attempt_id: str, expected: str) -> dict:
         raise ReviewToolError("only a complete final-auditor result can be imported")
     if result.get("specEpoch") != run.get("specEpoch"):
         raise ReviewToolError("final-auditor result uses the wrong specEpoch")
-    if has_declared_security_profile(run):
-        if manifest.get("securityLevel") != level or result.get("securityLevel") != level:
-            raise ReviewToolError("final-auditor securityLevel mismatch")
-        if manifest.get("permittedValidationClasses") != permitted_validation_classes(level):
-            raise ReviewToolError("final-auditor validation classes do not match security level")
+    if manifest.get("securityLevel") != level or result.get("securityLevel") != level:
+        raise ReviewToolError("final-auditor securityLevel mismatch")
+    if manifest.get("permittedValidationClasses") != permitted_validation_classes(level):
+        raise ReviewToolError("final-auditor validation classes do not match security level")
     observations = load_jsonl(root / "observations.jsonl")
     validations = load_jsonl(root / "validations.jsonl")
     objections = load_jsonl(root / "audit-objections.jsonl")
@@ -1519,13 +1518,10 @@ def import_audit(root: Path, attempt_id: str, expected: str) -> dict:
         if unknown:
             raise ReviewToolError(f"final-auditor validation references unknown candidates: {sorted(unknown)}")
         validation_class = row.get("validationClass")
-        if has_declared_security_profile(run):
-            if not validation_class_allowed(level, str(validation_class)):
-                raise ReviewToolError(
-                    f"validation class {validation_class!r} is not permitted at security level {level!r}"
-                )
-        elif validation_class is None:
-            validation_class = "ordinary"
+        if not validation_class_allowed(level, str(validation_class)):
+            raise ReviewToolError(
+                f"validation class {validation_class!r} is not permitted at security level {level!r}"
+            )
         canonical = _allocate(validations, "id", "VAL", 6)
         validation_map[local] = canonical
         validations.append({

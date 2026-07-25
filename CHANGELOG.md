@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here.
 
+## 0.5.0 — 2026-07-25
+
+### Fixed
+
+- `check_review` no longer crashes with a raw `TypeError` when
+  `currentManifest` or an attempt `importDisposition` is corrupted to a
+  non-string value; both now produce targeted issues, and an unhashable
+  disposition no longer aborts the remaining checks for its unit.
+- `import-audit` no longer silently defaults a missing final-auditor
+  `validationClass` to `ordinary`; the class permission check always runs.
+
+### Added
+
+- A validator-coverage meta-test that deletes and corrupts every field the
+  tool writes into `run.json`, `paths.jsonl`, and `work-units.jsonl`
+  (including nested attempt, angle, and manifest-history records) and
+  requires a targeted issue for each; fields protected only by the
+  canonical-state digest are named in an explicit allowlist with the reason.
+- `review_tool/schema.py`: declarative field-rule tables for run, security
+  profile, unit, angle, and attempt-lifecycle constraints — the single
+  source of truth for field-shape validation, with messages verified
+  byte-identical to the previous validator across a 424-state differential
+  corpus.
+
+### Changed
+
+- Security-profile-dependent checks now always run and fail closed: a review
+  whose profile is missing or malformed reports every resulting mismatch
+  instead of suppressing profile-scoped validation.
+
+### Removed
+
+- The declared-profile compatibility scaffolding threaded through the
+  validator and importers; the tool is single-operator, a security profile
+  is mandatory, and legacy profile-less state is simply re-initialized.
+
 ## 0.4.0 — 2026-07-25
 
 ### Fixed

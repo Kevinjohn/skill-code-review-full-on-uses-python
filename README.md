@@ -2,7 +2,7 @@
 
 An open Agent Skills-format workflow for exhaustive, evidence-backed review of an entire repository.
 
-> **Current release:** 0.4.0. The canonical Skill, portable Python state
+> **Current release:** 0.5.0. The canonical Skill, portable Python state
 > utility, tests, and CI are included; product-specific Plugin packaging is
 > intentionally deferred.
 

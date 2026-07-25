@@ -114,7 +114,6 @@ def _verify_canonical_graph(
     observations: list[dict[str, Any]],
     validations: list[dict[str, Any]],
     objections: list[dict[str, Any]],
-    declared_profile: bool,
     level: str,
     allowed_sources: set[str],
     work_ids: set[str],
@@ -239,18 +238,17 @@ def _verify_canonical_graph(
             validation.get("result") in VALIDATION_RESULTS,
             f"{validation.get('id')}: invalid validation result",
         )
-        if declared_profile:
-            _issue(
-                issues,
-                validation.get("securityLevel") == level,
-                f"{validation.get('id')}: validation securityLevel mismatch",
-            )
-            _issue(
-                issues,
-                validation_class_allowed(level, str(validation_class)),
-                f"{validation.get('id')}: validation class is not permitted "
-                f"at security level {level}",
-            )
+        _issue(
+            issues,
+            validation.get("securityLevel") == level,
+            f"{validation.get('id')}: validation securityLevel mismatch",
+        )
+        _issue(
+            issues,
+            validation_class_allowed(level, str(validation_class)),
+            f"{validation.get('id')}: validation class is not permitted "
+            f"at security level {level}",
+        )
         refs = validation.get("observationIds", [])
         if not isinstance(refs, list):
             issues.append(

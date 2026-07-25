@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -43,25 +42,25 @@ from .policy import (
     WARM_BATCH_MAX_ASSIGNMENTS,
 )
 from .references import extract_reference
+from .schema import (
+    ANGLE_RULES,
+    ANGLE_STATUSES,
+    ATTEMPT_LIFECYCLE,
+    RUN_RULES,
+    RUN_STATUSES,
+    SECURITY_PROFILE_RULES,
+    UNIT_RULES,
+    UNIT_STATUSES,
+    VERDICTS,
+    apply_rules,
+)
 from .security import (
-    SECURITY_LEVELS,
     has_declared_security_profile,
     permitted_validation_classes,
     security_level,
+    security_profile,
 )
 from .transactions import VALID_OPERATIONS
-
-RUN_STATUSES = {"active", "paused", "concluded", "superseded"}
-UNIT_STATUSES = {"pending", "assigned", "partial", "complete", "blocked", "needs_revalidation"}
-ANGLE_STATUSES = {"pending", "reviewed", "not_applicable", "excluded_by_profile", "blocked", "needs_revalidation"}
-VERDICTS = {
-    "PASS",
-    "CONDITIONAL PASS",
-    "CHANGES REQUIRED",
-    "MAJOR CHANGES REQUIRED",
-    "BLOCK",
-    "INCOMPLETE REVIEW",
-}
 
 
 def _issue(issues: list[str], condition: bool, message: str) -> None:
@@ -368,21 +367,6 @@ def verify_transactions(root: Path, issues: list[str]) -> None:
             issues.append(f"unrecovered transaction ({kind}): {transaction.name}")
 
 
-def verify_spec_migrations(run: dict[str, Any], issues: list[str]) -> None:
-    """Require the single fixed v2 specification epoch."""
-    _issue(
-        issues,
-        run.get("specMigrations") == [],
-        "run.json specMigrations must be an empty array; specification "
-        "migration is not supported — start a new review instead",
-    )
-    _issue(
-        issues,
-        run.get("specEpoch") == "SPEC-0001",
-        "run.json specEpoch must be SPEC-0001",
-    )
-
-
 def _verify_attempt_lifecycle(
     attempt: dict[str, Any],
     key: str,
@@ -394,22 +378,18 @@ def _verify_attempt_lifecycle(
         issues.append(f"{key}: {exc}")
     disposition = attempt.get("importDisposition")
     status = attempt.get("status")
-    legal = {
-        "pending": {"assigned"},
-        "imported": {"complete", "partial", "blocked"},
-        "superseded": {"interrupted"},
-        "rejected": {"interrupted"},
-        "reconciled_interruption": {"interrupted"},
-    }
+    legal = ATTEMPT_LIFECYCLE
+    disposition_valid = _is_one_of(disposition, set(legal))
     _issue(
         issues,
-        _is_one_of(disposition, set(legal)),
+        disposition_valid,
         f"{key}: invalid importDisposition",
     )
     _issue(
         issues,
         isinstance(status, str)
-        and status in legal.get(disposition, set()),
+        and disposition_valid
+        and status in legal[disposition],
         f"{key}: attempt status and importDisposition are inconsistent",
     )
     if (
@@ -450,7 +430,6 @@ def _verify_attempt(
     attempt: dict[str, Any],
     requirements: list[dict[str, Any]],
     *,
-    declared_profile: bool,
     level: str,
     issues: list[str],
     warm_batches: dict[str, list[tuple[str, str | None]]],
@@ -535,25 +514,24 @@ def _verify_attempt(
                 )
         except ReviewToolError as exc:
             issues.append(str(exc))
-    if declared_profile:
-        _issue(
-            issues,
-            manifest.get("securityLevel") == level,
-            f"{key}: attempt manifest securityLevel mismatch",
-        )
-        _issue(
-            issues,
-            manifest.get("permittedValidationClasses")
-            == permitted_validation_classes(level),
-            f"{key}: attempt manifest validation classes do not match security level",
-        )
+    _issue(
+        issues,
+        manifest.get("securityLevel") == level,
+        f"{key}: attempt manifest securityLevel mismatch",
+    )
+    _issue(
+        issues,
+        manifest.get("permittedValidationClasses")
+        == permitted_validation_classes(level),
+        f"{key}: attempt manifest validation classes do not match security level",
+    )
+    if level == "off":
         assigned_angles = set(manifest.get("assignedScope", {}).get("angles", []))
-        if level == "off":
-            _issue(
-                issues,
-                5 not in assigned_angles,
-                f"{key}: angle 5 assigned at security level off",
-            )
+        _issue(
+            issues,
+            5 not in assigned_angles,
+            f"{key}: angle 5 assigned at security level off",
+        )
     principal = attempt.get("reviewerPrincipalId")
     _issue(
         issues,
@@ -766,7 +744,6 @@ def _verify_manifest_history(
     run: dict[str, Any],
     unit: dict[str, Any],
     *,
-    declared_profile: bool,
     level: str,
     issues: list[str],
     warnings: list[str],
@@ -904,36 +881,35 @@ def _verify_manifest_history(
             manifest.get("reviewSpecVersion") == 2,
             f"{uid}: unit manifest reviewSpecVersion mismatch",
         )
-        if declared_profile:
-            _issue(
-                issues,
-                manifest.get("securityLevel") == level,
-                f"{uid}: unit manifest securityLevel mismatch",
+        _issue(
+            issues,
+            manifest.get("securityLevel") == level,
+            f"{uid}: unit manifest securityLevel mismatch",
+        )
+        _issue(
+            issues,
+            manifest.get("permittedValidationClasses")
+            == permitted_validation_classes(level),
+            f"{uid}: unit manifest validation classes do not match security level",
+        )
+        required_angle_values = manifest.get(
+            "requiredAngleDispositions", []
+        )
+        if not isinstance(required_angle_values, list) or not all(
+            isinstance(item, int) and not isinstance(item, bool)
+            for item in required_angle_values
+        ):
+            issues.append(
+                f"{uid}: unit manifest requiredAngleDispositions is malformed"
             )
-            _issue(
-                issues,
-                manifest.get("permittedValidationClasses")
-                == permitted_validation_classes(level),
-                f"{uid}: unit manifest validation classes do not match security level",
-            )
-            required_angle_values = manifest.get(
-                "requiredAngleDispositions", []
-            )
-            if not isinstance(required_angle_values, list) or not all(
-                isinstance(item, int) and not isinstance(item, bool)
-                for item in required_angle_values
-            ):
-                issues.append(
-                    f"{uid}: unit manifest requiredAngleDispositions is malformed"
-                )
-                required_angle_values = []
-            required_angles = set(required_angle_values)
-            expected_angles = set(range(1, 11)) - ({5} if level == "off" else set())
-            _issue(
-                issues,
-                required_angles == expected_angles,
-                f"{uid}: unit manifest angles do not match security level",
-            )
+            required_angle_values = []
+        required_angles = set(required_angle_values)
+        expected_angles = set(range(1, 11)) - ({5} if level == "off" else set())
+        _issue(
+            issues,
+            required_angles == expected_angles,
+            f"{uid}: unit manifest angles do not match security level",
+        )
         for field in (
             "contentSetHash",
             "subsystem",
@@ -988,92 +964,23 @@ def _verify_run_state(
     root: Path,
     run: dict[str, Any],
     issues: list[str],
-) -> tuple[list[dict[str, Any]], bool, str]:
-    _issue(issues, run.get("schemaVersion") == 1, "run.json schemaVersion must be 1")
+) -> tuple[list[dict[str, Any]], str]:
+    apply_rules(run, RUN_RULES, issues)
     try:
         validate_review_spec_version(run.get("reviewSpecVersion"))
     except ReviewToolError as exc:
         issues.append(str(exc))
-    _issue(
-        issues,
-        bool(re.fullmatch(r"SPEC-\d{4}", str(run.get("specEpoch", "")))),
-        "run.json specEpoch is invalid",
-    )
-    verify_spec_migrations(run, issues)
-    _issue(
-        issues,
-        _is_one_of(run.get("status"), RUN_STATUSES),
-        "run.json status is invalid",
-    )
-    verdict = run.get("verdict")
-    _issue(
-        issues,
-        verdict is None or _is_one_of(verdict, VERDICTS),
-        f"run.json verdict is invalid: {verdict!r}",
-    )
-    _issue(
-        issues,
-        isinstance(run.get("currentEpoch"), str) and bool(run.get("currentEpoch")),
-        "run.json currentEpoch is required",
-    )
-    _issue(
-        issues,
-        _is_one_of(
-            run.get("runtimeCapability"),
-            {"continuous", "persistent_task", "external_supervisor", "none"},
-        ),
-        "run.json runtimeCapability is invalid",
-    )
-    capabilities = run.get("specialistCapabilities")
-    _issue(
-        issues,
-        isinstance(capabilities, dict)
-        and isinstance(capabilities.get("stableReviewerLineage"), bool)
-        and _is_one_of(
-            capabilities.get("source"),
-            {"harness_declared", "absent_default_false"},
-        ),
-        "run.json specialistCapabilities must include a boolean "
-        "stableReviewerLineage and valid source",
-    )
     acknowledgements = run.get("diagnosticAcknowledgements", [])
-    valid_acknowledgements = (
-        isinstance(acknowledgements, list)
-        and all(
-            isinstance(item, dict)
-            and isinstance(item.get("id"), str)
-            and isinstance(item.get("diagnosticIdentity"), str)
-            for item in acknowledgements
-        )
-    )
-    _issue(
-        issues,
-        valid_acknowledgements,
-        "run.json diagnosticAcknowledgements must contain scoped "
-        "acknowledgement objects",
-    )
     if not isinstance(acknowledgements, list):
         acknowledgements = []
-    declared_profile = has_declared_security_profile(run)
     level = security_level(run)
-    if not declared_profile:
+    if not has_declared_security_profile(run):
         issues.append("run.json securityProfile is required and must be an object")
-        return acknowledgements, False, level
-    profile = run["securityProfile"]
-    _issue(
+    apply_rules(
+        security_profile(run),
+        SECURITY_PROFILE_RULES,
         issues,
-        level in SECURITY_LEVELS,
-        "run.json securityProfile level is invalid",
-    )
-    _issue(
-        issues,
-        _is_one_of(profile.get("source"), {"default", "user"}),
-        "run.json securityProfile source is invalid",
-    )
-    _issue(
-        issues,
-        profile.get("externalTargets") is False,
-        "run.json securityProfile must prohibit external targets",
+        {"level": level},
     )
     assignments = root / "assignments" / "FINAL-AUDIT"
     if assignments.is_dir():
@@ -1094,7 +1001,7 @@ def _verify_run_state(
                 == permitted_validation_classes(level),
                 f"{label}: validation classes do not match security level",
             )
-    return acknowledgements, True, level
+    return acknowledgements, level
 
 
 def _current_path_index(
@@ -1136,7 +1043,6 @@ def _verify_unit_angles(
     unit: dict[str, Any],
     uid: Any,
     level: str,
-    declared_profile: bool,
     issues: list[str],
 ) -> dict[str, dict[str, Any]]:
     angles = unit.get("angles", {})
@@ -1154,43 +1060,19 @@ def _verify_unit_angles(
             issues.append(f"{uid} angle {number}: disposition must be an object")
             continue
         valid_angles[number] = angle
-        status = angle.get("status")
-        _issue(
+        apply_rules(
+            angle,
+            ANGLE_RULES,
             issues,
-            _is_one_of(status, ANGLE_STATUSES),
-            f"{uid} angle {number}: invalid status",
+            {
+                "uid": uid,
+                "number": number,
+                "run": run,
+                "level": level,
+                "status": angle.get("status"),
+            },
         )
-        if _is_one_of(status, {"reviewed", "not_applicable"}):
-            _issue(
-                issues,
-                bool(angle.get("evidence")),
-                f"{uid} angle {number}: semantic/applicability evidence required",
-            )
-            _issue(
-                issues,
-                angle.get("specEpoch") == run.get("specEpoch"),
-                f"{uid} angle {number}: disposition from wrong specEpoch",
-            )
-        if status == "excluded_by_profile":
-            exclusion = angle.get("profileExclusion", {})
-            _issue(
-                issues,
-                number == "5" and level == "off",
-                f"{uid} angle {number}: invalid profile exclusion",
-            )
-            _issue(
-                issues,
-                isinstance(exclusion, dict)
-                and exclusion.get("domain") == "security"
-                and exclusion.get("level") == "off",
-                f"{uid} angle {number}: profile exclusion metadata is invalid",
-            )
-            _issue(
-                issues,
-                angle.get("specEpoch") == run.get("specEpoch"),
-                f"{uid} angle {number}: profile exclusion from wrong specEpoch",
-            )
-    if declared_profile and level == "off":
+    if level == "off":
         angle_five = angles.get("5")
         _issue(
             issues,
@@ -1198,7 +1080,7 @@ def _verify_unit_angles(
             and angle_five.get("status") == "excluded_by_profile",
             f"{uid}: angle 5 must be excluded at security level off",
         )
-    elif declared_profile:
+    else:
         _issue(
             issues,
             all(
@@ -1215,7 +1097,6 @@ def _valid_second_review_requirements(
     unit: dict[str, Any],
     uid: Any,
     level: str,
-    declared_profile: bool,
     issues: list[str],
 ) -> list[dict[str, Any]]:
     requirements = unit.get("requiredSecondReviews", [])
@@ -1247,7 +1128,7 @@ def _valid_second_review_requirements(
         len(requirement_ids) == len(set(requirement_ids)),
         f"{uid}: duplicate second-review requirement identifiers",
     )
-    if declared_profile and level == "off":
+    if level == "off":
         _issue(
             issues,
             all(item.get("angle") != 5 for item in valid),
@@ -1326,7 +1207,6 @@ def _verify_unit(
     run: dict[str, Any],
     unit: dict[str, Any],
     current_paths: dict[Any, dict[str, Any]],
-    declared_profile: bool,
     level: str,
     issues: list[str],
     warnings: list[str],
@@ -1337,27 +1217,16 @@ def _verify_unit(
     cache: EvidenceCache,
 ) -> None:
     uid = unit.get("id")
-    _issue(
+    apply_rules(
+        unit,
+        UNIT_RULES,
         issues,
-        bool(re.fullmatch(r"WORK-\d{4}", str(uid or ""))),
-        f"work unit has invalid identifier: {uid}",
+        {
+            "uid": uid,
+            "run": run,
+            "level": level,
+        },
     )
-    _issue(
-        issues,
-        _is_one_of(unit.get("status"), UNIT_STATUSES),
-        f"{uid}: invalid status transition or status {unit.get('status')!r}",
-    )
-    _issue(
-        issues,
-        unit.get("specEpoch") == run.get("specEpoch"),
-        f"{uid}: unit from wrong specEpoch",
-    )
-    if declared_profile:
-        _issue(
-            issues,
-            unit.get("securityLevel") == level,
-            f"{uid}: securityLevel does not match run profile",
-        )
     unit_paths = unit.get("paths", [])
     if not isinstance(unit_paths, list) or not all(
         isinstance(path, str) for path in unit_paths
@@ -1376,11 +1245,9 @@ def _verify_unit(
             unit.get("contentSetHash") == expected_identity,
             f"{uid}: work-unit content identity mismatch",
         )
-    angles = _verify_unit_angles(
-        run, unit, uid, level, declared_profile, issues
-    )
+    angles = _verify_unit_angles(run, unit, uid, level, issues)
     requirements = _valid_second_review_requirements(
-        unit, uid, level, declared_profile, issues
+        unit, uid, level, issues
     )
     _verify_tier_a_reasons(
         root,
@@ -1411,7 +1278,6 @@ def _verify_unit(
             unit,
             attempt,
             requirements,
-            declared_profile=declared_profile,
             level=level,
             issues=issues,
             warm_batches=warm_batches,
@@ -1456,7 +1322,6 @@ def _verify_unit(
         root,
         run,
         unit,
-        declared_profile=declared_profile,
         level=level,
         issues=issues,
         warnings=warnings,
@@ -1531,7 +1396,7 @@ def _review_metrics(
     implementation_lines: list[int] = []
     for unit in units:
         manifest_path = unit.get("currentManifest")
-        if not manifest_path:
+        if not isinstance(manifest_path, str) or not manifest_path:
             continue
         try:
             manifest = load_json(safe_child(root, manifest_path))
@@ -1608,9 +1473,7 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
         issues.append("run.json must contain an object")
         return _invalid_review_result(issues)
 
-    acknowledgements, declared_profile, level = _verify_run_state(
-        root, run, issues
-    )
+    acknowledgements, level = _verify_run_state(root, run, issues)
     current_paths = _current_path_index(run, paths, issues)
     unit_ids = [str(unit.get("id")) for unit in units]
     if len(unit_ids) != len(set(unit_ids)):
@@ -1627,7 +1490,6 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
                 run,
                 unit,
                 current_paths,
-                declared_profile,
                 level,
                 issues,
                 warnings,
@@ -1659,8 +1521,10 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
         for unit in units
         for attempt in unit.get("reviewAttempts", [])
         if isinstance(attempt, dict)
-        and attempt.get("importDisposition")
-        in {"imported", "reconciled_interruption"}
+        and _is_one_of(
+            attempt.get("importDisposition"),
+            {"imported", "reconciled_interruption"},
+        )
     }
     final_audit = run.get("finalAudit")
     if (
@@ -1673,7 +1537,6 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
         observations,
         validations,
         objections,
-        declared_profile,
         level,
         allowed_sources,
         {str(unit.get("id")) for unit in units},
