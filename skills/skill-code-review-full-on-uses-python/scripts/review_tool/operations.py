@@ -95,11 +95,9 @@ def initialize(
     review_dir: Path,
     contract: Path,
     reference_pack: Path,
-    runtime: str,
     *,
     security_level: str = "off",
     security_source: str = "default",
-    stable_reviewer_lineage: bool | None = None,
 ) -> dict:
     if security_level not in SECURITY_LEVELS:
         raise ReviewToolError(f"invalid security level: {security_level}")
@@ -138,15 +136,6 @@ def initialize(
                 "existing review has security level "
                 f"{run_security_level(existing)!r}; start a new review to change it"
             )
-        if stable_reviewer_lineage is not None and (
-            stable_reviewer_lineage
-            != existing.get("specialistCapabilities", {}).get(
-                "stableReviewerLineage", False
-            )
-        ):
-            raise ReviewToolError(
-                "existing review has a different immutable stable-reviewer-lineage capability"
-            )
         return {"reviewDirectory": str(root.resolve()), "idempotent": True, "stateDigest": state_digest(root.resolve())}
     if root.exists() and any(root.iterdir()):
         raise ReviewToolError(f"refusing to initialize non-empty unrelated directory: {root}")
@@ -161,7 +150,6 @@ def initialize(
     root = ensure_review_root(root, create=True)
     for directory in ("assignments", "agents", "baseline", "tooling/reference/source", "tooling/transactions"):
         safe_child(root, directory).mkdir(parents=True, exist_ok=True)
-    lineage_enabled = stable_reviewer_lineage is True
     atomic_write(root / "tooling/reference/source/contract.md", contract_bytes)
     atomic_write(root / "tooling/reference/source/reference-pack.md", pack_bytes)
     derived = []
@@ -207,17 +195,13 @@ def initialize(
         "specMigrations": [],
         "repositoryIdentity": "unrecorded",
         "reviewDirectory": str(root),
-        "status": "active" if runtime != "none" else "paused",
+        "status": "paused",
         "verdict": None,
-        "runtimeCapability": runtime,
-        "capabilitySource": "harness_declared" if runtime != "none" else "absent_default_none",
+        "runtimeCapability": "none",
+        "capabilitySource": "absent_default_none",
         "specialistCapabilities": {
-            "stableReviewerLineage": lineage_enabled,
-            "source": (
-                "harness_declared"
-                if lineage_enabled
-                else "absent_default_false"
-            ),
+            "stableReviewerLineage": False,
+            "source": "absent_default_false",
         },
         "diagnosticAcknowledgements": [],
         "securityProfile": {
@@ -235,7 +219,7 @@ def initialize(
         "budget": None,
         "currentPhase": "baseline",
         "completedPhases": [],
-        "checkpointReason": "runtime has no automatic continuation" if runtime == "none" else None,
+        "checkpointReason": "runtime has no automatic continuation",
         "nextActions": ["capture and materialize the frozen baseline", "construct semantic work units", "run the representative pilot"],
         "schemaMigrations": [],
         "stateEventHead": None,

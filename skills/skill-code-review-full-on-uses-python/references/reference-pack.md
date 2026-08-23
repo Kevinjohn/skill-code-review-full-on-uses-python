@@ -1,9 +1,9 @@
 # Review Reference Pack
 
 Reference Pack version: 2. Companion to Orchestrator Contract version 2. The
-state utility preserves these editable sources for each review specification
-epoch and derives phase-specific files using Section R10. Runtime identities
-protect the reviewed repository and review evidence, not this documentation.
+state utility preserves these editable sources for the life of the review and
+derives phase-specific files using Section R10. Runtime identities protect
+the reviewed repository and review evidence, not this documentation.
 
 ## R1. Observation categories
 
@@ -43,11 +43,11 @@ supported; start a new review against the edited specification.
   "reviewDirectory": "code-reviews/...",
   "status": "active",
   "verdict": null,
-  "runtimeCapability": "continuous|persistent_task|external_supervisor|none",
-  "capabilitySource": "harness_declared|absent_default_none",
+  "runtimeCapability": "none",
+  "capabilitySource": "absent_default_none",
   "specialistCapabilities": {
     "stableReviewerLineage": false,
-    "source": "harness_declared|absent_default_false"
+    "source": "absent_default_false"
   },
   "diagnosticAcknowledgements": [],
   "securityProfile": {
@@ -76,12 +76,10 @@ supported; start a new review against the edited specification.
 ```
 
 Do not store derived counts in `run.json`. Verdict remains null before a valid
-terminal handoff. `specMigrations` is always an empty array and `specEpoch` is
-always `SPEC-0001`: specification migration is not supported, so editing the
-contract or Reference Pack requires a new review. Specification provenance is
-immutable. Lifecycle transitions are those in the contract. Every run requires
-`securityProfile`; profile-less or unsupported review state must be
-re-initialized. A security level is immutable for one run.
+terminal handoff. `runtimeCapability` is always `none` (this host has no
+automatic continuation), `specMigrations` is always an empty array, and
+`specEpoch` is always `SPEC-0001`: specification migration is not supported,
+so editing the contract or Reference Pack requires a new review.
 
 ### `paths.jsonl`
 
@@ -843,12 +841,11 @@ substantive scope, locations, and a claim for every completed angle.
 
 ### Reviewer reuse
 
-`reviewerPrincipalId` is an opaque run-local stable specialist principal.
-`reviewerExecutionId` identifies one attempt. `reviewerReuseMode` is `cold` or
-`warm_batch`; warm attempts also name an opaque `reviewerBatchId`. Warm mode
-is invalid unless `specialistCapabilities.stableReviewerLineage` is true, the
-packet is `independent_second_review`, and the batch contains no more than five
-assignments for one principal. Primary semantic attempts use `cold`.
+Every attempt uses `cold` reviewer reuse: each `reviewerPrincipalId` is an
+opaque run-local identity used for exactly one attempt, and
+`reviewerExecutionId` identifies that attempt. Warm-batch reuse is prohibited
+in this environment because no stable reviewer lineage exists; the tool
+rejects any `warm_batch` manifest.
 Every conclusion must stand on current-assignment evidence and must not
 reference prior attempt-local candidates or dispositions unless explicitly
 assigned.

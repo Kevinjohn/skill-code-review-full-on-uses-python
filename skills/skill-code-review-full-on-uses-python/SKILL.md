@@ -22,21 +22,13 @@ authority. Mandatory clauses are not optional guidance.
 4. Require review specification version 2. If canonical state uses another
    version, stop with the tool's re-initialization diagnostic.
 
-## Declare the real runtime
+## Runtime and reviewer assumptions
 
-Record exactly one runtime capability:
-
-- `continuous`: the current controller can run sequential waves and survive
-  context management;
-- `persistent_task`: the host provides a real durable task or equivalent;
-- `external_supervisor`: an actual supervisor will reinvoke the orchestrator
-  from persisted state; or
-- `none`: automatic continuation is unavailable.
-
-Do not infer persistence from these instructions. Default to `none` unless the
-runtime explicitly establishes a stronger capability. If the user explicitly
-requests a durable task and the host supports one, create it before substantive
-inspection. Otherwise do not pretend the Skill creates persistence.
+This host has no durable task, external supervisor, or stable reviewer
+lineage. Record `runtimeCapability: none` (the tool enforces this), execute
+all semantic units sequentially, and checkpoint through the tool at every
+boundary. Use cold independent reviewers for every assignment; never reuse a
+reviewer across assignments.
 
 ## Resolve security level
 
@@ -107,18 +99,6 @@ return only a compact status/path/counts/remaining-scope receipt.
 Treat packet or capsule size warnings as pilot calibration failures: remove
 duplicated orientation or narrow the assignment before scaling.
 
-Keep a stable opaque reviewer principal distinct from each attempt execution
-identity. Use cold independent reviewers unless the host genuinely exposes
-stable reviewer lineage. Only then may one principal process a bounded warm
-batch of closely related requirements; every requirement retains a separate
-manifest and result and must stand on current-assignment evidence.
-
-Keep the default reviewer configuration uniform until equivalent-scope
-benchmarks demonstrate comparable quality. Any later experiment routes by task
-capability, not tier alone: architecture mapping, tier assignment, validation,
-reconciliation, tail review, and final audit can all require strong semantic
-reasoning. Record only neutral configuration classes in publishable state.
-
 Fail closed at every dispatch boundary. Explicitly parse and validate assignment
 input; reject missing, malformed, unintentionally empty, duplicate, or unknown
 work identities instead of defaulting to an empty list. Record the intended
@@ -157,6 +137,22 @@ withdrawn, low-severity, test, documentation, nit, suggestion, and question
 records. Continue after severe findings. Run all seven phases, including
 cross-component reconciliation, dedicated tail review, candidate validation,
 and independent final audit.
+
+## Scale ceremony to repository size
+
+After baseline materialization, count non-excluded baseline paths:
+
+- **Small repositories (≤ 50 paths):** use the simplified path. Skip
+  orientation capsules and packet-generation ceremony; assign each work unit
+directly with inline scope, relevant references, output schema, and the
+specialist block. All completeness, validation, reconciliation, tail review,
+and audit obligations still apply — only the packet/capsule packaging is
+reduced.
+- **Larger repositories:** use the full capsule and packet machinery,
+calibrated by the pilot as described above.
+
+The tool's canonical checks are identical in both modes; only packaging
+differs.
 
 ## Preserve read-only scope
 

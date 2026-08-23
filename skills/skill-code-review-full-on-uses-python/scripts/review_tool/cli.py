@@ -30,18 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     _review_dir(init)
     init.add_argument("--contract", type=Path, required=True)
     init.add_argument("--reference-pack", type=Path, required=True)
-    init.add_argument("--runtime-capability", choices=("continuous", "persistent_task", "external_supervisor", "none"), default="none")
     init.add_argument(
         "--security-level",
         choices=SECURITY_LEVELS,
         default=None,
         help="Security review depth; defaults to off for a new review",
-    )
-    init.add_argument(
-        "--stable-reviewer-lineage",
-        action="store_true",
-        default=None,
-        help="Declare that the harness preserves a stable reviewer principal across warm assignments",
     )
 
     check = sub.add_parser("check", help="Validate canonical state and integrity invariants")
@@ -116,10 +109,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.review_dir,
                 args.contract,
                 args.reference_pack,
-                args.runtime_capability,
                 security_level=args.security_level or "off",
                 security_source="user" if args.security_level else "default",
-                stable_reviewer_lineage=args.stable_reviewer_lineage,
             )
         else:
             root = ensure_review_root(args.review_dir)

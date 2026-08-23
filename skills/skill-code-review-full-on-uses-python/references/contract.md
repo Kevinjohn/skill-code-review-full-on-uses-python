@@ -32,9 +32,9 @@ undiscovered defect exists.
 
 ## 2. Runtime and lifecycle
 
-The harness declares `continuous`, `persistent_task`, `external_supervisor`, or
-`none`. Default to `none`; instructions cannot create persistence. Use
-`active`, `paused`, `concluded`, or `superseded` for `run.json.status`.
+This host provides no automatic continuation: `runtimeCapability` is always
+`none`, runs are sequential, and every boundary produces a paused checkpoint.
+Use `active`, `paused`, `concluded`, or `superseded` for `run.json.status`.
 
 Legal transitions are `active -> paused|concluded|superseded`,
 `paused -> active|concluded|superseded`, and same-state evidence-bearing
@@ -115,20 +115,17 @@ Use `explicit_moving_target` only on explicit request. Each accepted content
 change creates a revision epoch, returns affected units to revalidation, and
 requires a final cutoff. On resume, never attach evidence to changed content.
 
-## 5. Specification epoch
+## 5. Specification version
 
 Initialization copies the supplied `contract.md` and `reference-pack.md` to
-`tooling/reference/source/`, records `reviewSpecVersion`, `SPEC-0001`, original
-relative paths, preserved paths, and initialization time, then derives the
-Reference Pack extracts mechanically.
-
-A review has exactly one specification epoch, `SPEC-0001`, fixed at
-initialization. The preserved specification bytes are immutable for the life
-of the run. Changing the contract or Reference Pack mid-review is not
-supported: finish or honestly pause the current review, then start a new
-review against the edited documents. Every angle disposition and attempt
-manifest records its `specEpoch`. Source-document editability never depends on
-regenerating an approval digest.
+`tooling/reference/source/`, records `reviewSpecVersion` and original relative
+paths, preserved paths, and initialization time, then derives the Reference
+Pack extracts mechanically. The preserved specification bytes are immutable
+for the life of the run. Changing the contract or Reference Pack mid-review is
+not supported: finish or honestly pause the current review, then start a new
+review against the edited documents. The tool rejects any review state whose
+document version differs from its own; there is exactly one specification
+epoch (`SPEC-0001`) per review and no migration path.
 
 ## 6. Canonical state and integrity
 
@@ -227,22 +224,15 @@ historical completion.
 For specification version 2, derive the contributor set from every imported
 `primary_semantic` attempt whose immutable assigned scope intersects the
 requirement. Seal each contributor's manifest, assigned scope, result and
-validation evidence, and specification epoch using the exact Reference Pack
+validation evidence, and specification identity using the exact Reference Pack
 projection. Recompute the raw result and validation identities at review
 gates. Never trust a caller-supplied subset or stored hash without its artifact.
 
-Treat reviewer principal and execution identity separately. A reviewer
-principal is an opaque run-local identity stable across one specialist
-context; an execution identity names one attempt. Warm reuse is permitted only
-when the host declares stable reviewer lineage as an orthogonal specialist
-capability. Otherwise use cold reviewers. Context mode is telemetry, never
+Use cold independent reviewers only: every reviewer principal is an opaque
+run-local identity used for exactly one attempt, and an execution identity
+names that one attempt. A second review must differ from every contributor by
+both principal and execution identity. Context mode is telemetry, never
 independence evidence.
-
-`reviewerPrincipalId` must be a non-empty stable identity on every
-specification-version-2 attempt and result. Warm reuse is limited to independent
-second reviews and to at most five assignments per batch. Primary semantic
-review is always cold. A second review must differ from every contributor by
-both principal and execution identity.
 
 Partial or interrupted work preserves usable evidence, records exact remainder,
 and creates a new attempt. It never becomes an exclusion or not-applicable
@@ -391,7 +381,7 @@ state and is not release clearance.
 
 The full completion audit requires complete path partitioning; explicit valid
 exclusions; completed bounded units; ten semantic dispositions each; current
-specification epoch; complete and independent second reviews; authoritative
+specification version; complete and independent second reviews; authoritative
 manifests; reconciled attempts; dispositioned observations and validations;
 gapless identifiers; completed architecture, cross-component, tail,
 validation, reconciliation, and independent-audit phases; current reports; no

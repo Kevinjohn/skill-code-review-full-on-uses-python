@@ -23,7 +23,8 @@ from .security import SECURITY_LEVELS
 RUN_STATUSES = {"active", "paused", "concluded", "superseded"}
 UNIT_STATUSES = {"pending", "assigned", "partial", "complete", "blocked", "needs_revalidation"}
 ANGLE_STATUSES = {"pending", "reviewed", "not_applicable", "excluded_by_profile", "blocked", "needs_revalidation"}
-RUNTIME_CAPABILITIES = {"continuous", "persistent_task", "external_supervisor", "none"}
+# This host has no automatic continuation; runs are sequential and checkpoint.
+RUNTIME_CAPABILITIES = {"none"}
 VERDICTS = {
     "PASS",
     "CONDITIONAL PASS",
