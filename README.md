@@ -87,6 +87,44 @@ reconciled. At security level `off`, dedicated security-only paths and Angle 5
 are explicitly profile-excluded, reports say `Security assessment: NOT
 PERFORMED`, and verdicts are qualified to the non-security scope.
 
+## Why this design works
+
+LLM reviewers fail in predictable ways: they overclaim completion, silently
+drop scope across long sessions, curate findings by severity or output length,
+and fabricate bookkeeping when asked to track state in context. This Skill is
+engineered against those failure modes rather than around them:
+
+- **A tool owns the truth, not the model.** Canonical review state lives in
+  JSON/JSONL files mutated only by the bundled Python utility through
+  verified transactions. The model reads views and proposes changes; it can
+  never silently rewrite history, skip a path, or mark unreviewed code as
+  reviewed. Every dispatch boundary fails closed: a malformed, missing, or
+  unexpectedly empty assignment is rejected rather than treated as "nothing
+  to do".
+- **Coverage is mechanical, not aspirational.** Completeness is defined as
+  checkable facts — exactly one primary work unit per non-excluded path,
+  ten angle dispositions per unit, every critical second review present,
+  gapless identifiers — and the utility verifies each fact. "I reviewed
+  everything" is not an input the tool accepts.
+- **Nothing observed is thrown away.** Rejected, duplicate, low-severity,
+  nit, and question records are all preserved with their evidence. Findings
+  are curated by validation, not by convenience.
+- **Independence is enforced structurally.** Critical (Tier A) requirements
+  require a second review by a distinct reviewer identity that differs from
+  every contributor; reviewers are always cold, so no conclusion rests on
+  prior-context familiarity.
+- **It is honest about limits.** Reviews pause at exact checkpoints instead
+  of pretending to finish; a terminal verdict requires the full completion
+  gate including an independent final audit; and every report states that
+  passing does not prove the absence of undiscovered defects. Security
+  assessment at level `off` is labelled `NOT PERFORMED`, never implied.
+- **Interruption is resumable, never lossy.** Partial evidence from
+  interrupted attempts is preserved and reassigned precisely; an
+  interruption is never recorded as an exclusion or completion.
+
+The result behaves less like a prompt and more like a protocol: the model
+supplies judgment, while Python supplies memory, arithmetic, and integrity.
+
 ## Repository layout
 
 ```text
@@ -324,6 +362,39 @@ or model capability. Runs without the current review-specification and security
 profile declarations fail closed with a re-initialization diagnostic.
 
 Ordinary pull-request, diff-only, quick, severity-limited, and narrow reviews should use a smaller review workflow.
+
+## Why Python?
+
+The Skill's intelligence comes from the model, but its trustworthiness comes
+from deterministic machinery — and that machinery needs a runtime. Python was
+chosen deliberately:
+
+- **State integrity demands real code.** Hash chains over manifests,
+  append-only event logs, atomic multi-file transactions with recovery,
+  schema validation of every imported record — these are exactly the tasks
+  language models do unreliably and plain code does perfectly. Asking the
+  model to maintain canonical state in context would make every guarantee in
+  this README decorative.
+- **Zero dependencies, maximum portability.** The entire utility is standard-
+  library Python 3.11+. There is nothing to install, no supply chain to trust,
+  and no build step. It runs identically on macOS, Linux, and Windows wherever
+  the agent host can execute a subprocess, which suits a skill that must be
+  dropped into heterogeneous agent environments (Codex, Claude Code, Gemini
+  CLI, Cursor).
+- **Testability is the point.** Because the enforcement layer is ordinary
+  code, it carries a 165-test suite covering broken-state fixtures, fault
+  injection at every transaction commit boundary, and a miniature end-to-end
+  repository review — all runnable in seconds with `python3 -m unittest` and
+  enforced in CI. Prompt-only workflows cannot be regression-tested this way.
+- **The model stays in its lane.** Python handles counting, hashing,
+  comparison, and persistence; the model handles semantics: judging whether
+  code is correct, whether evidence supports a claim, and whether a finding
+  matters. Splitting responsibilities this way means the failure of either
+  component is detectable — bad judgment shows up as disputed findings, bad
+  bookkeeping as a failed `check`.
+
+In short: if the workflow could be trusted to a well-written prompt, there
+would be no Python. It cannot, so there is.
 
 ## Review output
 
