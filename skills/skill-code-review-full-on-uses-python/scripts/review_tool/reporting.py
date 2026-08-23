@@ -129,6 +129,14 @@ def _combine(*values: Any, labels: tuple[str, ...] | None = None) -> str:
     return "; ".join(value for _, value in present)
 
 
+def _display_title(row: dict) -> str:
+    title = str(row.get("title") or "Untitled")
+    severity = row.get("severity")
+    if isinstance(severity, str):
+        title = re.sub(rf"^\[{re.escape(severity)}\]\s+", "", title)
+    return title
+
+
 def _observation_view(title: str, rows: list[dict]) -> bytes:
     lines = [f"# {title}", ""]
     if not rows:
@@ -138,9 +146,10 @@ def _observation_view(title: str, rows: list[dict]) -> bytes:
         assigned_severity = row.get("severity")
         severity = assigned_severity or "not assigned"
         anchor = re.sub(r"[^a-z0-9-]", "-", str(label).lower()).strip("-")
-        heading = f"## {label} — {row.get('title', 'Untitled')}"
+        display_title = _display_title(row)
+        heading = f"## {label} — {display_title}"
         if assigned_severity:
-            heading = f"## {label} — [{assigned_severity}] {row.get('title', 'Untitled')}"
+            heading = f"## {label} — [{assigned_severity}] {display_title}"
         lines.extend([
             f'<a id="{anchor}"></a>',
             heading,
@@ -187,7 +196,7 @@ def _observation_index(rows: list[dict]) -> bytes:
             target = f"findings/{severity}.md#{anchor}"
         else:
             target = None
-        label = f"{finding} — [{severity}] {row.get('title', 'Untitled')}"
+        label = f"{finding} — [{severity}] {_display_title(row)}"
         linked = f"[{label}]({target})" if target else label
         lines.append(f"- {linked} — {_format_locations(row)}")
     lines.append("")

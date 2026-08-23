@@ -1526,6 +1526,17 @@ def check_review(root: Path, *, check_generated: bool = True) -> dict[str, Any]:
             {"imported", "reconciled_interruption"},
         )
     }
+    # Successor final audits replace run.finalAudit, but validation and objection
+    # records imported by earlier audits remain immutable canonical evidence.
+    # Preserve every event-recorded audit import as an allowed evidence source.
+    for event in load_jsonl(root / "state-events.jsonl"):
+        actor = event.get("actor")
+        if (
+            event.get("operation") == "import_audit"
+            and isinstance(actor, str)
+            and actor.startswith("FINAL-AUDIT/ATTEMPT-")
+        ):
+            allowed_sources.add(actor)
     final_audit = run.get("finalAudit")
     if (
         isinstance(final_audit, dict)
