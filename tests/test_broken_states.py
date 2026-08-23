@@ -434,7 +434,7 @@ class BrokenStateTests(unittest.TestCase):
         (self.review / "run.json").write_bytes(canonical_bytes(run))
         self.assertIssue("re-initialize")
         with self.assertRaisesRegex(ReviewToolError, "re-initialize"):
-            initialize(self.review, CONTRACT, PACK, "none")
+            initialize(self.review, CONTRACT, PACK)
 
     def test_malformed_security_profile_is_reported(self):
         run = load_json(self.review / "run.json")

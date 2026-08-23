@@ -482,8 +482,7 @@ class EfficiencyTests(unittest.TestCase):
                     reviewerBatchId="BATCH-0001",
                 ),
             )
-            self._write_primary_result(review)
-            with self.assertRaisesRegex(ReviewToolError, "limited to independent second"):
+            with self.assertRaisesRegex(ReviewToolError, "requires stable reviewer lineage"):
                 import_specialist(review, "WORK-0001", "ATTEMPT-0001", state_digest(review))
 
     def test_unhashable_attempt_result_status_fails_preflight_and_import(self):
@@ -624,11 +623,16 @@ class EfficiencyTests(unittest.TestCase):
             self.assertEqual(unit["status"], "partial")
             self.assertEqual(unit["completedSecondReviews"], [])
 
-    def test_warm_second_review_requires_declared_stable_lineage(self):
+    def test_warm_second_review_is_rejected_even_with_legacy_declared_lineage(self):
         with tempfile.TemporaryDirectory() as temporary:
-            review = new_review(
-                Path(temporary), stable_reviewer_lineage=True
-            )
+            review = new_review(Path(temporary))
+            run_path = review / "run.json"
+            run = load_json(run_path)
+            run["specialistCapabilities"] = {
+                "stableReviewerLineage": True,
+                "source": "harness_declared",
+            }
+            run_path.write_bytes(canonical_bytes(run))
             clean_unit(review, tier="A")
             self._write_primary_result(review)
             import_specialist(review, "WORK-0001", "ATTEMPT-0001", state_digest(review))
@@ -638,10 +642,27 @@ class EfficiencyTests(unittest.TestCase):
                 batch_id="BATCH-0001",
             )
             self._write_second_result(review, second, principal="EXEC-SECOND")
-            import_specialist(review, "WORK-0001", "ATTEMPT-0002", state_digest(review))
-            self.assertEqual(
-                load_jsonl(review / "work-units.jsonl")[0]["status"], "complete"
+            with self.assertRaisesRegex(
+                ReviewToolError, "requires stable reviewer lineage"
+            ):
+                import_specialist(review, "WORK-0001", "ATTEMPT-0002", state_digest(review))
+
+    def test_warm_second_review_is_rejected_without_stable_lineage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            review = new_review(Path(temporary))
+            clean_unit(review, tier="A")
+            self._write_primary_result(review)
+            import_specialist(review, "WORK-0001", "ATTEMPT-0001", state_digest(review))
+            second = self._add_second_review(
+                review,
+                reuse_mode="warm_batch",
+                batch_id="BATCH-0001",
             )
+            self._write_second_result(review, second, principal="EXEC-SECOND")
+            with self.assertRaisesRegex(
+                ReviewToolError, "requires stable reviewer lineage"
+            ):
+                import_specialist(review, "WORK-0001", "ATTEMPT-0002", state_digest(review))
 
     def test_packet_capsule_and_attempt_scaffold_are_deterministic(self):
         with tempfile.TemporaryDirectory() as temporary:

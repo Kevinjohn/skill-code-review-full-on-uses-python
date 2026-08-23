@@ -292,6 +292,12 @@ def validate_attempt_manifest_data(
             raise ReviewToolError(
                 f"{label}: primary attempt cannot claim second-review evidence"
             )
+    if reuse_mode == "warm_batch":
+        # This host has no stable reviewer lineage; reject unconditionally,
+        # even when no run state is supplied for cross-checking.
+        raise ReviewToolError(
+            f"{label}: warm reviewer reuse requires stable reviewer lineage"
+        )
     if run is not None:
         run_version = validate_review_spec_version(run.get("reviewSpecVersion"))
         if manifest.get("reviewSpecVersion") != run_version:
@@ -311,20 +317,6 @@ def validate_attempt_manifest_data(
             raise ReviewToolError(
                 f"{label}: attempt manifest validation classes do not match security level"
             )
-        if reuse_mode == "warm_batch":
-            if packet_type != "independent_second_review":
-                raise ReviewToolError(
-                    f"{label}: warm reviewer reuse is limited to "
-                    "independent second reviews"
-                )
-            capabilities = run.get("specialistCapabilities")
-            if (
-                not isinstance(capabilities, dict)
-                or capabilities.get("stableReviewerLineage") is not True
-            ):
-                raise ReviewToolError(
-                    f"{label}: warm reviewer reuse requires stable reviewer lineage"
-                )
     return manifest
 
 

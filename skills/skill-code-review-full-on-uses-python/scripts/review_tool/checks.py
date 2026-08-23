@@ -550,16 +550,13 @@ def _verify_attempt(
         f"{key}: invalid reviewerReuseMode",
     )
     if reuse_mode == "warm_batch":
+        # This host has no stable reviewer lineage; warm reuse is always
+        # prohibited, including in legacy state that declares it.
         _issue(
             issues,
-            manifest.get("packetType") == "independent_second_review",
-            f"{key}: warm reviewer reuse is limited to independent second reviews",
-        )
-        stable = run.get("specialistCapabilities", {}).get("stableReviewerLineage")
-        _issue(
-            issues,
-            stable is True,
-            f"{key}: warm reviewer reuse requires stable lineage",
+            False,
+            f"{key}: warm reviewer reuse requires stable reviewer lineage, "
+            "which no longer exists",
         )
         _issue(
             issues,

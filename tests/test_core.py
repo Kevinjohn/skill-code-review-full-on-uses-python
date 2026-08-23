@@ -134,12 +134,12 @@ class CoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             review = base / "review"
-            initialize(review, CONTRACT, PACK, "none")
+            initialize(review, CONTRACT, PACK)
             edited = base / "contract.md"
             edited.write_text(CONTRACT.read_text() + "\nEdited.\n")
             with self.assertRaisesRegex(ReviewToolError, "preserves a different contract"):
-                initialize(review, edited, PACK, "none")
-            result = initialize(review, CONTRACT, PACK, "none")
+                initialize(review, edited, PACK)
+            result = initialize(review, CONTRACT, PACK)
             self.assertTrue(result["idempotent"])
 
     def test_failed_initialization_leaves_no_partial_review(self):
@@ -155,7 +155,7 @@ class CoreTests(unittest.TestCase):
             pack.write_bytes(PACK.read_bytes())
             review = base / "review"
             with self.assertRaisesRegex(ReviewToolError, "version mismatch"):
-                initialize(review, contract, pack, "none")
+                initialize(review, contract, pack)
             self.assertFalse(review.exists())
 
     def test_manifest_history_is_append_only_and_chain_validated(self):
@@ -184,7 +184,7 @@ class CoreTests(unittest.TestCase):
                 issues,
             )
 
-    def test_omitted_lineage_flag_is_idempotent_for_existing_review(self):
+    def test_reinit_without_flags_is_idempotent_for_existing_review(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             review = base / "review"
@@ -192,8 +192,6 @@ class CoreTests(unittest.TestCase):
                 review,
                 CONTRACT,
                 PACK,
-                "none",
-                stable_reviewer_lineage=True,
             )
             args = build_parser().parse_args(
                 [
@@ -206,15 +204,22 @@ class CoreTests(unittest.TestCase):
                     str(PACK),
                 ]
             )
-            self.assertIsNone(args.stable_reviewer_lineage)
+            self.assertFalse(hasattr(args, "runtime_capability"))
+            self.assertFalse(hasattr(args, "stable_reviewer_lineage"))
             result = initialize(
                 review,
                 CONTRACT,
                 PACK,
-                "none",
-                stable_reviewer_lineage=args.stable_reviewer_lineage,
             )
             self.assertTrue(result["idempotent"])
+
+    def test_runtime_capability_is_always_none(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            review = new_review(Path(temporary))
+            run = load_json(review / "run.json")
+            self.assertEqual(run["runtimeCapability"], "none")
+            self.assertEqual(run["capabilitySource"], "absent_default_none")
+            self.assertEqual(run["status"], "paused")
 
     def test_generated_view_freshness(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -341,7 +346,7 @@ class CoreTests(unittest.TestCase):
     def test_security_profile_defaults_and_report_scope(self):
         with tempfile.TemporaryDirectory() as temporary:
             review = Path(temporary) / "review"
-            initialize(review, CONTRACT, PACK, "none")
+            initialize(review, CONTRACT, PACK)
             run = load_json(review / "run.json")
             self.assertEqual(
                 run["securityProfile"],

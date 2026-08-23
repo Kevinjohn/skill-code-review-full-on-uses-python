@@ -18,18 +18,14 @@ PACK = ROOT / "skills/skill-code-review-full-on-uses-python/references/reference
 TOOL = ROOT / "skills/skill-code-review-full-on-uses-python/scripts/review_tool"
 
 
-def new_review(
-    base: Path, *, level: str = "off", stable_reviewer_lineage: bool = False
-) -> Path:
+def new_review(base: Path, *, level: str = "off") -> Path:
     review = base / "review"
     initialize(
         review,
         CONTRACT,
         PACK,
-        "none",
         security_level=level,
         security_source="user",
-        stable_reviewer_lineage=stable_reviewer_lineage,
     )
     return review
 
